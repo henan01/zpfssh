@@ -1,0 +1,48 @@
+name: ZenSSH
+options:
+  bundleIdPrefix: com.zenlite
+  deploymentTarget:
+    macOS: "13.0"
+  xcodeVersion: "15.0"
+  generateEmptyDirectories: true
+
+packages:
+  SwiftTerm:
+    url: https://github.com/migueldeicaza/SwiftTerm
+    from: 1.2.0
+
+targets:
+  ZenSSH:
+    type: application
+    platform: macOS
+    deploymentTarget: "13.0"
+    sources:
+      - Sources/ZenSSH
+    resources:
+      - Sources/ZenSSH/Resources
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.zenlite.ZenSSH
+        MACOSX_DEPLOYMENT_TARGET: 13.0
+        SWIFT_VERSION: 5.0
+        ENABLE_HARDENED_RUNTIME: YES
+        CODE_SIGN_STYLE: Automatic
+        INFOPLIST_FILE: Sources/ZenSSH/Resources/Info.plist
+    dependencies:
+      - package: SwiftTerm
+    entitlements:
+      path: ZenSSH.entitlements
+      properties:
+        com.apple.security.app-sandbox: false
+        com.apple.security.network.client: true
+        com.apple.security.files.user-selected.read-write: true
+
+schemes:
+  ZenSSH:
+    build:
+      targets:
+        ZenSSH: all
+    run:
+      config: Debug
+    archive:
+      config: Release

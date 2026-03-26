@@ -1,0 +1,466 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {
+	};
+	objectVersion = 77;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		144C3B677F090E1203AF03FE /* TerminalContainerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D758BAC14BF35F240085D489 /* TerminalContainerView.swift */; };
+		464A38506F3A9A1ABAC682FB /* ZenSSHApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = 7EFA94DF611F554B1A80C214 /* ZenSSHApp.swift */; };
+		48976C8DC2EA83B79DFE08CA /* SearchBarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = C0EA81FCDC4A66C43C70E8DB /* SearchBarView.swift */; };
+		51D1072C85D908C3C3956E6C /* SwiftTerm in Frameworks */ = {isa = PBXBuildFile; productRef = 8AFB88B7A71576847FF036A4 /* SwiftTerm */; };
+		5492C48F5169BB9E494C819E /* ServerStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1CAA57F5D2675D4DB3F90D80 /* ServerStore.swift */; };
+		549C06839C609AB1DD7A5B96 /* SFTPService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4950C1DC1721E6BBC8917400 /* SFTPService.swift */; };
+		5C98E058B9C414D4404224DA /* SnippetPanelView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6107A43E4BFDBBD44CD089E7 /* SnippetPanelView.swift */; };
+		607484D4D71B66301456AB46 /* SnippetStore.swift in Sources */ = {isa = PBXBuildFile; fileRef = C6F14B94606475FE2EE00E73 /* SnippetStore.swift */; };
+		664309D9A0F172096F012F55 /* Server.swift in Sources */ = {isa = PBXBuildFile; fileRef = 353B8F39F48D0B7225CA2EBF /* Server.swift */; };
+		73F55FB84DAC8C238F0C6608 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 9D3EFF7AA699F8F151C0FAA8 /* ContentView.swift */; };
+		7A174AE88EE5576F35373725 /* Snippet.swift in Sources */ = {isa = PBXBuildFile; fileRef = 5E9724ECEB64DD69AE10E39E /* Snippet.swift */; };
+		875B44D414AC2D4805C9F93D /* AddServerView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A50FDF86CA33F48CAF0987BF /* AddServerView.swift */; };
+		8829F0E21655B0D7F282415D /* SessionTab.swift in Sources */ = {isa = PBXBuildFile; fileRef = F8B9CA84EA0ABA20075DC6E3 /* SessionTab.swift */; };
+		88AFA062A92AB7BF3EF093A2 /* SidebarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = D04AA7C809D84173A5291719 /* SidebarView.swift */; };
+		88DA0B74465C00DBB775A5B4 /* CommandPaletteView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 1D2406DD3AE45A0D6124C638 /* CommandPaletteView.swift */; };
+		B1EDCC581BB5C21EC6A08309 /* SettingsView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 6A43A58AA26461C3A2A00FFD /* SettingsView.swift */; };
+		BAA3B0188E37A1F384B5AF24 /* TerminalPaneView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 24A4AD81D90C2FCB89F793A9 /* TerminalPaneView.swift */; };
+		C0FED7A62714C77E043A278C /* TabBarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = A353E421EBB7688F42EB6DE3 /* TabBarView.swift */; };
+		C83B311CCD52307271162862 /* KeychainService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 89C4EA6858666C9FACB5CDBA /* KeychainService.swift */; };
+		DDBE9E59C8586B63B4A87203 /* SessionManager.swift in Sources */ = {isa = PBXBuildFile; fileRef = A9770190B1C7E4C5CBD13203 /* SessionManager.swift */; };
+		DE2EA9A40980576AB157454A /* BroadcastBarView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B190FEF552C3BD78B0B47CFC /* BroadcastBarView.swift */; };
+		E2AA124C8C5C65BD4FE605A5 /* SFTPView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 988264C17030D3EC91898EA5 /* SFTPView.swift */; };
+		E3761A68D8504924E87F5893 /* Theme.swift in Sources */ = {isa = PBXBuildFile; fileRef = 8797B21B8F0E18C46C8A344E /* Theme.swift */; };
+		EBEBB1463950684817C70EE1 /* AppSettings.swift in Sources */ = {isa = PBXBuildFile; fileRef = AC92E9B299B5101865F3EE67 /* AppSettings.swift */; };
+/* End PBXBuildFile section */
+
+/* Begin PBXFileReference section */
+		1CAA57F5D2675D4DB3F90D80 /* ServerStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ServerStore.swift; sourceTree = "<group>"; };
+		1D2406DD3AE45A0D6124C638 /* CommandPaletteView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CommandPaletteView.swift; sourceTree = "<group>"; };
+		24A4AD81D90C2FCB89F793A9 /* TerminalPaneView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalPaneView.swift; sourceTree = "<group>"; };
+		2BDA6976BB3FD4DA53F8F4D6 /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist; path = Info.plist; sourceTree = "<group>"; };
+		353B8F39F48D0B7225CA2EBF /* Server.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Server.swift; sourceTree = "<group>"; };
+		4950C1DC1721E6BBC8917400 /* SFTPService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SFTPService.swift; sourceTree = "<group>"; };
+		5E9724ECEB64DD69AE10E39E /* Snippet.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Snippet.swift; sourceTree = "<group>"; };
+		6107A43E4BFDBBD44CD089E7 /* SnippetPanelView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SnippetPanelView.swift; sourceTree = "<group>"; };
+		6A43A58AA26461C3A2A00FFD /* SettingsView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SettingsView.swift; sourceTree = "<group>"; };
+		7EFA94DF611F554B1A80C214 /* ZenSSHApp.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ZenSSHApp.swift; sourceTree = "<group>"; };
+		8797B21B8F0E18C46C8A344E /* Theme.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Theme.swift; sourceTree = "<group>"; };
+		89C4EA6858666C9FACB5CDBA /* KeychainService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = KeychainService.swift; sourceTree = "<group>"; };
+		988264C17030D3EC91898EA5 /* SFTPView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SFTPView.swift; sourceTree = "<group>"; };
+		9D3EFF7AA699F8F151C0FAA8 /* ContentView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		A353E421EBB7688F42EB6DE3 /* TabBarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TabBarView.swift; sourceTree = "<group>"; };
+		A50FDF86CA33F48CAF0987BF /* AddServerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AddServerView.swift; sourceTree = "<group>"; };
+		A9770190B1C7E4C5CBD13203 /* SessionManager.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionManager.swift; sourceTree = "<group>"; };
+		AC92E9B299B5101865F3EE67 /* AppSettings.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppSettings.swift; sourceTree = "<group>"; };
+		B190FEF552C3BD78B0B47CFC /* BroadcastBarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = BroadcastBarView.swift; sourceTree = "<group>"; };
+		C0EA81FCDC4A66C43C70E8DB /* SearchBarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SearchBarView.swift; sourceTree = "<group>"; };
+		C6F14B94606475FE2EE00E73 /* SnippetStore.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SnippetStore.swift; sourceTree = "<group>"; };
+		D04AA7C809D84173A5291719 /* SidebarView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SidebarView.swift; sourceTree = "<group>"; };
+		D758BAC14BF35F240085D489 /* TerminalContainerView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TerminalContainerView.swift; sourceTree = "<group>"; };
+		E0807E9CE6F6D4020C11AAD3 /* ZenSSH.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = ZenSSH.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		F8B9CA84EA0ABA20075DC6E3 /* SessionTab.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SessionTab.swift; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		42E9AD880F7045D08529CC87 /* Frameworks */ = {
+			isa = PBXFrameworksBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				51D1072C85D908C3C3956E6C /* SwiftTerm in Frameworks */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		0F31893E32619F593E50ACC5 /* Views */ = {
+			isa = PBXGroup;
+			children = (
+				A50FDF86CA33F48CAF0987BF /* AddServerView.swift */,
+				B190FEF552C3BD78B0B47CFC /* BroadcastBarView.swift */,
+				1D2406DD3AE45A0D6124C638 /* CommandPaletteView.swift */,
+				9D3EFF7AA699F8F151C0FAA8 /* ContentView.swift */,
+				C0EA81FCDC4A66C43C70E8DB /* SearchBarView.swift */,
+				6A43A58AA26461C3A2A00FFD /* SettingsView.swift */,
+				988264C17030D3EC91898EA5 /* SFTPView.swift */,
+				D04AA7C809D84173A5291719 /* SidebarView.swift */,
+				6107A43E4BFDBBD44CD089E7 /* SnippetPanelView.swift */,
+				A353E421EBB7688F42EB6DE3 /* TabBarView.swift */,
+				D758BAC14BF35F240085D489 /* TerminalContainerView.swift */,
+				24A4AD81D90C2FCB89F793A9 /* TerminalPaneView.swift */,
+			);
+			path = Views;
+			sourceTree = "<group>";
+		};
+		106EBA95887D5BE92129A76B /* Models */ = {
+			isa = PBXGroup;
+			children = (
+				353B8F39F48D0B7225CA2EBF /* Server.swift */,
+				F8B9CA84EA0ABA20075DC6E3 /* SessionTab.swift */,
+				5E9724ECEB64DD69AE10E39E /* Snippet.swift */,
+				8797B21B8F0E18C46C8A344E /* Theme.swift */,
+			);
+			path = Models;
+			sourceTree = "<group>";
+		};
+		13FCEF78E5281319340B1AA0 /* App */ = {
+			isa = PBXGroup;
+			children = (
+				7EFA94DF611F554B1A80C214 /* ZenSSHApp.swift */,
+			);
+			path = App;
+			sourceTree = "<group>";
+		};
+		3886AF8625ABFB48CE618B10 /* Resources */ = {
+			isa = PBXGroup;
+			children = (
+				2BDA6976BB3FD4DA53F8F4D6 /* Info.plist */,
+			);
+			path = Resources;
+			sourceTree = "<group>";
+		};
+		48229AD4D8B78AF34CDD6CB2 /* ZenSSH */ = {
+			isa = PBXGroup;
+			children = (
+				13FCEF78E5281319340B1AA0 /* App */,
+				106EBA95887D5BE92129A76B /* Models */,
+				3886AF8625ABFB48CE618B10 /* Resources */,
+				93A30F8BDD48B993A6A8D723 /* Services */,
+				4E91524E7838D3B9A0570EC5 /* ViewModels */,
+				0F31893E32619F593E50ACC5 /* Views */,
+			);
+			name = ZenSSH;
+			path = Sources/ZenSSH;
+			sourceTree = "<group>";
+		};
+		4E91524E7838D3B9A0570EC5 /* ViewModels */ = {
+			isa = PBXGroup;
+			children = (
+				AC92E9B299B5101865F3EE67 /* AppSettings.swift */,
+				1CAA57F5D2675D4DB3F90D80 /* ServerStore.swift */,
+				A9770190B1C7E4C5CBD13203 /* SessionManager.swift */,
+				C6F14B94606475FE2EE00E73 /* SnippetStore.swift */,
+			);
+			path = ViewModels;
+			sourceTree = "<group>";
+		};
+		62182461B94FCB6C81D4EB97 /* Products */ = {
+			isa = PBXGroup;
+			children = (
+				E0807E9CE6F6D4020C11AAD3 /* ZenSSH.app */,
+			);
+			name = Products;
+			sourceTree = "<group>";
+		};
+		93A30F8BDD48B993A6A8D723 /* Services */ = {
+			isa = PBXGroup;
+			children = (
+				89C4EA6858666C9FACB5CDBA /* KeychainService.swift */,
+				4950C1DC1721E6BBC8917400 /* SFTPService.swift */,
+			);
+			path = Services;
+			sourceTree = "<group>";
+		};
+		9C4213AE29B3CDB15744ADEF = {
+			isa = PBXGroup;
+			children = (
+				48229AD4D8B78AF34CDD6CB2 /* ZenSSH */,
+				62182461B94FCB6C81D4EB97 /* Products */,
+			);
+			sourceTree = "<group>";
+		};
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		55D36DCC6BE48334BD083510 /* ZenSSH */ = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 4135CF9A42FEDE468EB286C3 /* Build configuration list for PBXNativeTarget "ZenSSH" */;
+			buildPhases = (
+				B8B7F6D2171B9CE3753F3C92 /* Sources */,
+				42E9AD880F7045D08529CC87 /* Frameworks */,
+			);
+			buildRules = (
+			);
+			dependencies = (
+			);
+			name = ZenSSH;
+			packageProductDependencies = (
+				8AFB88B7A71576847FF036A4 /* SwiftTerm */,
+			);
+			productName = ZenSSH;
+			productReference = E0807E9CE6F6D4020C11AAD3 /* ZenSSH.app */;
+			productType = "com.apple.product-type.application";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		B4130314B7291732AB8236D4 /* Project object */ = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = YES;
+				LastUpgradeCheck = 1500;
+				TargetAttributes = {
+					55D36DCC6BE48334BD083510 = {
+						ProvisioningStyle = Automatic;
+					};
+				};
+			};
+			buildConfigurationList = 89269DA57D446B7EF2888A46 /* Build configuration list for PBXProject "ZenSSH" */;
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (
+				Base,
+				en,
+			);
+			mainGroup = 9C4213AE29B3CDB15744ADEF;
+			minimizedProjectReferenceProxies = 1;
+			packageReferences = (
+				C25789794FF79058C1596143 /* XCRemoteSwiftPackageReference "SwiftTerm" */,
+			);
+			preferredProjectObjectVersion = 77;
+			productRefGroup = 62182461B94FCB6C81D4EB97 /* Products */;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (
+				55D36DCC6BE48334BD083510 /* ZenSSH */,
+			);
+		};
+/* End PBXProject section */
+
+/* Begin PBXSourcesBuildPhase section */
+		B8B7F6D2171B9CE3753F3C92 /* Sources */ = {
+			isa = PBXSourcesBuildPhase;
+			buildActionMask = 2147483647;
+			files = (
+				875B44D414AC2D4805C9F93D /* AddServerView.swift in Sources */,
+				EBEBB1463950684817C70EE1 /* AppSettings.swift in Sources */,
+				DE2EA9A40980576AB157454A /* BroadcastBarView.swift in Sources */,
+				88DA0B74465C00DBB775A5B4 /* CommandPaletteView.swift in Sources */,
+				73F55FB84DAC8C238F0C6608 /* ContentView.swift in Sources */,
+				C83B311CCD52307271162862 /* KeychainService.swift in Sources */,
+				549C06839C609AB1DD7A5B96 /* SFTPService.swift in Sources */,
+				E2AA124C8C5C65BD4FE605A5 /* SFTPView.swift in Sources */,
+				48976C8DC2EA83B79DFE08CA /* SearchBarView.swift in Sources */,
+				664309D9A0F172096F012F55 /* Server.swift in Sources */,
+				5492C48F5169BB9E494C819E /* ServerStore.swift in Sources */,
+				DDBE9E59C8586B63B4A87203 /* SessionManager.swift in Sources */,
+				8829F0E21655B0D7F282415D /* SessionTab.swift in Sources */,
+				B1EDCC581BB5C21EC6A08309 /* SettingsView.swift in Sources */,
+				88AFA062A92AB7BF3EF093A2 /* SidebarView.swift in Sources */,
+				7A174AE88EE5576F35373725 /* Snippet.swift in Sources */,
+				5C98E058B9C414D4404224DA /* SnippetPanelView.swift in Sources */,
+				607484D4D71B66301456AB46 /* SnippetStore.swift in Sources */,
+				C0FED7A62714C77E043A278C /* TabBarView.swift in Sources */,
+				144C3B677F090E1203AF03FE /* TerminalContainerView.swift in Sources */,
+				BAA3B0188E37A1F384B5AF24 /* TerminalPaneView.swift in Sources */,
+				E3761A68D8504924E87F5893 /* Theme.swift in Sources */,
+				464A38506F3A9A1ABAC682FB /* ZenSSHApp.swift in Sources */,
+			);
+			runOnlyForDeploymentPostprocessing = 0;
+		};
+/* End PBXSourcesBuildPhase section */
+
+/* Begin XCBuildConfiguration section */
+		7F394C85A5A1A060A4E459DE /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				ENABLE_NS_ASSERTIONS = NO;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 13.0;
+				MTL_ENABLE_DEBUG_INFO = NO;
+				MTL_FAST_MATH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+		86DDB019DE20E1A77C9E252E /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = ZenSSH.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				ENABLE_HARDENED_RUNTIME = YES;
+				INFOPLIST_FILE = Sources/ZenSSH/Resources/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 13.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.zenlite.ZenSSH;
+				SDKROOT = macosx;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+		8E2797620F049AEA5BD08E90 /* Release */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				CODE_SIGN_ENTITLEMENTS = ZenSSH.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				ENABLE_HARDENED_RUNTIME = YES;
+				INFOPLIST_FILE = Sources/ZenSSH/Resources/Info.plist;
+				LD_RUNPATH_SEARCH_PATHS = (
+					"$(inherited)",
+					"@executable_path/../Frameworks",
+				);
+				MACOSX_DEPLOYMENT_TARGET = 13.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.zenlite.ZenSSH;
+				SDKROOT = macosx;
+				SWIFT_VERSION = 5.0;
+			};
+			name = Release;
+		};
+		B773F08482531B4C4B11E6E5 /* Debug */ = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ALWAYS_SEARCH_USER_PATHS = NO;
+				CLANG_ANALYZER_NONNULL = YES;
+				CLANG_ANALYZER_NUMBER_OBJECT_CONVERSION = YES_AGGRESSIVE;
+				CLANG_CXX_LANGUAGE_STANDARD = "gnu++14";
+				CLANG_CXX_LIBRARY = "libc++";
+				CLANG_ENABLE_MODULES = YES;
+				CLANG_ENABLE_OBJC_ARC = YES;
+				CLANG_ENABLE_OBJC_WEAK = YES;
+				CLANG_WARN_BLOCK_CAPTURE_AUTORELEASING = YES;
+				CLANG_WARN_BOOL_CONVERSION = YES;
+				CLANG_WARN_COMMA = YES;
+				CLANG_WARN_CONSTANT_CONVERSION = YES;
+				CLANG_WARN_DEPRECATED_OBJC_IMPLEMENTATIONS = YES;
+				CLANG_WARN_DIRECT_OBJC_ISA_USAGE = YES_ERROR;
+				CLANG_WARN_DOCUMENTATION_COMMENTS = YES;
+				CLANG_WARN_EMPTY_BODY = YES;
+				CLANG_WARN_ENUM_CONVERSION = YES;
+				CLANG_WARN_INFINITE_RECURSION = YES;
+				CLANG_WARN_INT_CONVERSION = YES;
+				CLANG_WARN_NON_LITERAL_NULL_CONVERSION = YES;
+				CLANG_WARN_OBJC_IMPLICIT_RETAIN_SELF = YES;
+				CLANG_WARN_OBJC_LITERAL_CONVERSION = YES;
+				CLANG_WARN_OBJC_ROOT_CLASS = YES_ERROR;
+				CLANG_WARN_QUOTED_INCLUDE_IN_FRAMEWORK_HEADER = YES;
+				CLANG_WARN_RANGE_LOOP_ANALYSIS = YES;
+				CLANG_WARN_STRICT_PROTOTYPES = YES;
+				CLANG_WARN_SUSPICIOUS_MOVE = YES;
+				CLANG_WARN_UNGUARDED_AVAILABILITY = YES_AGGRESSIVE;
+				CLANG_WARN_UNREACHABLE_CODE = YES;
+				CLANG_WARN__DUPLICATE_METHOD_MATCH = YES;
+				COPY_PHASE_STRIP = NO;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_STRICT_OBJC_MSGSEND = YES;
+				ENABLE_TESTABILITY = YES;
+				GCC_C_LANGUAGE_STANDARD = gnu11;
+				GCC_DYNAMIC_NO_PIC = NO;
+				GCC_NO_COMMON_BLOCKS = YES;
+				GCC_OPTIMIZATION_LEVEL = 0;
+				GCC_PREPROCESSOR_DEFINITIONS = (
+					"$(inherited)",
+					"DEBUG=1",
+				);
+				GCC_WARN_64_TO_32_BIT_CONVERSION = YES;
+				GCC_WARN_ABOUT_RETURN_TYPE = YES_ERROR;
+				GCC_WARN_UNDECLARED_SELECTOR = YES;
+				GCC_WARN_UNINITIALIZED_AUTOS = YES_AGGRESSIVE;
+				GCC_WARN_UNUSED_FUNCTION = YES;
+				GCC_WARN_UNUSED_VARIABLE = YES;
+				MACOSX_DEPLOYMENT_TARGET = 13.0;
+				MTL_ENABLE_DEBUG_INFO = INCLUDE_SOURCE;
+				MTL_FAST_MATH = YES;
+				ONLY_ACTIVE_ARCH = YES;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SDKROOT = macosx;
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = DEBUG;
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_VERSION = 5.0;
+			};
+			name = Debug;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		4135CF9A42FEDE468EB286C3 /* Build configuration list for PBXNativeTarget "ZenSSH" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				86DDB019DE20E1A77C9E252E /* Debug */,
+				8E2797620F049AEA5BD08E90 /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+		89269DA57D446B7EF2888A46 /* Build configuration list for PBXProject "ZenSSH" */ = {
+			isa = XCConfigurationList;
+			buildConfigurations = (
+				B773F08482531B4C4B11E6E5 /* Debug */,
+				7F394C85A5A1A060A4E459DE /* Release */,
+			);
+			defaultConfigurationIsVisible = 0;
+			defaultConfigurationName = Debug;
+		};
+/* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		C25789794FF79058C1596143 /* XCRemoteSwiftPackageReference "SwiftTerm" */ = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/migueldeicaza/SwiftTerm";
+			requirement = {
+				kind = upToNextMajorVersion;
+				minimumVersion = 1.2.0;
+			};
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		8AFB88B7A71576847FF036A4 /* SwiftTerm */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = C25789794FF79058C1596143 /* XCRemoteSwiftPackageReference "SwiftTerm" */;
+			productName = SwiftTerm;
+		};
+/* End XCSwiftPackageProductDependency section */
+	};
+	rootObject = B4130314B7291732AB8236D4 /* Project object */;
+}
