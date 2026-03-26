@@ -6,10 +6,10 @@ struct ContentView: View {
     @StateObject private var snippetStore = SnippetStore()
     @StateObject private var quickCmdStore = QuickCommandStore()
     @ObservedObject private var settings = AppSettings.shared
+    @Environment(\.openSettings) private var openSettings
 
     @State private var columnVisibility: NavigationSplitViewVisibility = .all
     @State private var showCommandPalette: Bool = false
-    @State private var showSettings: Bool = false
     @State private var showSFTP: Bool = false
     @State private var showSnippets: Bool = false
     @State private var showBroadcastBar: Bool = false
@@ -174,19 +174,17 @@ struct ContentView: View {
 
                 Divider()
 
-                Button(action: { showSettings = true }) {
+                Button(action: { openSettings() }) {
                     Image(systemName: "gear")
                 }
-                .help("设置")
+                .help("设置 (⌘,)")
+                .keyboardShortcut(",", modifiers: .command)
             }
         }
         .sheet(isPresented: $showCommandPalette) {
             CommandPaletteView(snippetStore: snippetStore,
                                sessionManager: sessionManager,
                                isVisible: $showCommandPalette)
-        }
-        .sheet(isPresented: $showSettings) {
-            SettingsView(settings: settings)
         }
         .sheet(isPresented: $showNewServerSheet) {
             AddServerView(serverStore: serverStore)

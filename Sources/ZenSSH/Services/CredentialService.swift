@@ -1,22 +1,30 @@
 import Foundation
 import CommonCrypto
+import Security
 
-/// App-specific encrypted credential storage — no Keychain required.
+/// App-specific encrypted credential storage.
 ///
-/// Architecture:
-///   - A random 256-bit master key is generated once and stored in:
-///       ~/Library/Application Support/com.zenlite.ZenSSH/credentials/.master_key
-///     with file permissions 600 (owner read/write only).
-///   - Passwords are AES-256-CBC encrypted with that key and stored as:
-///       ~/Library/Application Support/com.zenlite.ZenSSH/credentials/<serverID>
-///     also mode 600.
-///   - The entire directory is mode 700.
-///   - No Keychain access is needed or requested.
+/// Architecture
+/// ────────────
+/// • A random 256-bit AES master key is generated once and stored in the
+///   **macOS Keychain** (service "com.zenlite.ZenSSH", account "master-key").
+///   It is NOT written to disk, so copying the credentials folder cannot
+///   expose passwords.
+/// • Passwords are AES-256-CBC encrypted with that key and stored as:
+///     ~/Library/Application Support/com.zenlite.ZenSSH/credentials/<serverID>
+///   mode 600.
+/// • The entire directory is mode 700.
+///
+/// Migration: if a legacy `.master_key` file is found from an earlier build,
+/// its contents are migrated to the Keychain and the file is then deleted.
 final class CredentialService: @unchecked Sendable {
     static let shared = CredentialService()
 
     private let credentialsDir: URL
     private lazy var masterKey: Data = loadOrCreateMasterKey()
+
+    private let keychainService = "com.zenlite.ZenSSH"
+    private let keychainAccount = "master-key"
 
     private init() {
         let appSupport = FileManager.default.urls(
@@ -55,27 +63,70 @@ final class CredentialService: @unchecked Sendable {
         try? FileManager.default.removeItem(at: credPath(serverID))
     }
 
-    // MARK: - Master Key (stored in credentials dir, never in Keychain)
+    // MARK: - Master Key (stored in macOS Keychain, never on disk)
 
-    private var masterKeyURL: URL {
+    /// Legacy file path used by older builds. Only read for migration.
+    private var legacyMasterKeyURL: URL {
         credentialsDir.appendingPathComponent(".master_key")
     }
 
     private func loadOrCreateMasterKey() -> Data {
-        // Try to load existing key
-        if let existing = try? Data(contentsOf: masterKeyURL),
-           existing.count == kCCKeySizeAES256 {
+        // 1. Try Keychain first
+        if let existing = keychainLoadKey(), existing.count == kCCKeySizeAES256 {
+            // Re-save to upgrade any old item that still has a restrictive ACL
+            // (e.g. stored before kSecAttrAccessibleAfterFirstUnlock was set).
+            // This is a no-op cost-wise and silently migrates old items.
+            keychainSaveKey(existing)
             return existing
         }
-        // Generate new key
+
+        // 2. Migrate from legacy file if present
+        if let fileKey = try? Data(contentsOf: legacyMasterKeyURL),
+           fileKey.count == kCCKeySizeAES256 {
+            keychainSaveKey(fileKey)
+            try? FileManager.default.removeItem(at: legacyMasterKeyURL)
+            return fileKey
+        }
+
+        // 3. Generate a fresh key and store it in Keychain
         var key = Data(count: kCCKeySizeAES256)
         _ = key.withUnsafeMutableBytes {
             SecRandomCopyBytes(kSecRandomDefault, kCCKeySizeAES256, $0.baseAddress!)
         }
-        try? key.write(to: masterKeyURL)
-        try? FileManager.default.setAttributes(
-            [.posixPermissions: 0o600], ofItemAtPath: masterKeyURL.path)
+        keychainSaveKey(key)
         return key
+    }
+
+    // MARK: Keychain helpers for the master key
+
+    private func keychainSaveKey(_ key: Data) {
+        // kSecAttrAccessibleAfterFirstUnlock: accessible without per-app ACL prompt
+        // once the device keychain is first unlocked after boot. This avoids the
+        // repeated authorization dialogs that occur with ad-hoc signed builds whose
+        // binary hash changes on every rebuild.
+        let query: [CFString: Any] = [
+            kSecClass:          kSecClassGenericPassword,
+            kSecAttrService:    keychainService,
+            kSecAttrAccount:    keychainAccount,
+            kSecValueData:      key,
+            kSecAttrAccessible: kSecAttrAccessibleAfterFirstUnlock
+        ]
+        SecItemDelete(query as CFDictionary)
+        SecItemAdd(query as CFDictionary, nil)
+    }
+
+    private func keychainLoadKey() -> Data? {
+        let query: [CFString: Any] = [
+            kSecClass:       kSecClassGenericPassword,
+            kSecAttrService: keychainService,
+            kSecAttrAccount: keychainAccount,
+            kSecReturnData:  true,
+            kSecMatchLimit:  kSecMatchLimitOne
+        ]
+        var result: AnyObject?
+        let status = SecItemCopyMatching(query as CFDictionary, &result)
+        guard status == errSecSuccess, let data = result as? Data else { return nil }
+        return data
     }
 
     // MARK: - AES-256-CBC  (IV prepended to ciphertext)

@@ -34,7 +34,7 @@ xcuserdata/
 # ===========================
 .build/
 .swiftpm/
-*.resolved
+# Package.resolved 应提交到版本库，用于锁定依赖版本
 
 # ===========================
 # CocoaPods

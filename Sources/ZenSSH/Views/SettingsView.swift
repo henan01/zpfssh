@@ -3,29 +3,19 @@ import AppKit
 
 struct SettingsView: View {
     @ObservedObject var settings: AppSettings
-    @State private var selectedTab: SettingsTab = .appearance
-
-    enum SettingsTab: String, CaseIterable {
-        case appearance = "外观"
-        case terminal   = "终端"
-        case general    = "通用"
-    }
 
     var body: some View {
-        TabView(selection: $selectedTab) {
+        TabView {
             AppearanceSettingsView(settings: settings)
                 .tabItem { Label("外观", systemImage: "paintbrush") }
-                .tag(SettingsTab.appearance)
 
             TerminalSettingsView(settings: settings)
                 .tabItem { Label("终端", systemImage: "terminal") }
-                .tag(SettingsTab.terminal)
 
             GeneralSettingsView(settings: settings)
                 .tabItem { Label("通用", systemImage: "gear") }
-                .tag(SettingsTab.general)
         }
-        .frame(width: 560, height: 560)
+        .frame(width: 560, height: 480)
     }
 }
 
@@ -39,18 +29,20 @@ struct AppearanceSettingsView: View {
             Section("终端主题") {
                 Picker("主题", selection: $settings.appearance.themeId) {
                     ForEach(TerminalTheme.builtins) { theme in
-                        HStack {
+                        HStack(spacing: 6) {
                             RoundedRectangle(cornerRadius: 3)
                                 .fill(Color(theme.background.nsColor))
                                 .frame(width: 20, height: 14)
-                                .overlay(RoundedRectangle(cornerRadius: 3).strokeBorder(Color.secondary.opacity(0.3), lineWidth: 0.5))
+                                .overlay(
+                                    RoundedRectangle(cornerRadius: 3)
+                                        .strokeBorder(Color.secondary.opacity(0.3), lineWidth: 0.5)
+                                )
                             Text(theme.name)
                         }
                         .tag(theme.id)
                     }
                 }
                 .pickerStyle(.menu)
-                .frame(maxWidth: 250)
             }
 
             Section("背景") {
@@ -66,7 +58,7 @@ struct AppearanceSettingsView: View {
                     EmptyView()
 
                 case .image:
-                    HStack {
+                    HStack(spacing: 8) {
                         if !settings.appearance.backgroundImagePath.isEmpty {
                             if let img = NSImage(contentsOfFile: settings.appearance.backgroundImagePath) {
                                 Image(nsImage: img)
@@ -82,20 +74,27 @@ struct AppearanceSettingsView: View {
                         }
                         Button("选择图片") { pickImage() }
                         if !settings.appearance.backgroundImagePath.isEmpty {
-                            Button("清除") { settings.appearance.backgroundImagePath = "" }.foregroundColor(.red)
+                            Button("清除") { settings.appearance.backgroundImagePath = "" }
+                                .foregroundColor(.red)
                         }
                     }
-                    HStack {
-                        Text("透明度")
-                        Slider(value: $settings.appearance.backgroundOpacity, in: 0...0.9)
-                        Text("\(Int(settings.appearance.backgroundOpacity * 100))%")
-                            .monospacedDigit().frame(width: 36)
+                    LabeledContent("透明度") {
+                        HStack(spacing: 6) {
+                            Slider(value: $settings.appearance.backgroundOpacity, in: 0...0.9)
+                                .frame(minWidth: 120)
+                            Text("\(Int(settings.appearance.backgroundOpacity * 100))%")
+                                .monospacedDigit()
+                                .frame(width: 40, alignment: .trailing)
+                        }
                     }
-                    HStack {
-                        Text("模糊")
-                        Slider(value: $settings.appearance.backgroundBlur, in: 0...20)
-                        Text("\(Int(settings.appearance.backgroundBlur))px")
-                            .monospacedDigit().frame(width: 36)
+                    LabeledContent("模糊") {
+                        HStack(spacing: 6) {
+                            Slider(value: $settings.appearance.backgroundBlur, in: 0...20)
+                                .frame(minWidth: 120)
+                            Text("\(Int(settings.appearance.backgroundBlur)) px")
+                                .monospacedDigit()
+                                .frame(width: 40, alignment: .trailing)
+                        }
                     }
                     Picker("填充方式", selection: $settings.appearance.imageFillMode) {
                         ForEach(ImageFillMode.allCases, id: \.self) { m in
@@ -104,24 +103,25 @@ struct AppearanceSettingsView: View {
                     }
 
                 case .gradient:
-                    HStack {
-                        Text("起始颜色")
+                    LabeledContent("起始颜色") {
                         ColorPicker("", selection: Binding(
                             get: { Color(settings.appearance.gradientStart.nsColor) },
                             set: { settings.appearance.gradientStart = CodableColor(NSColor($0)) }
                         ))
+                        .labelsHidden()
                     }
-                    HStack {
-                        Text("结束颜色")
+                    LabeledContent("结束颜色") {
                         ColorPicker("", selection: Binding(
                             get: { Color(settings.appearance.gradientEnd.nsColor) },
                             set: { settings.appearance.gradientEnd = CodableColor(NSColor($0)) }
                         ))
+                        .labelsHidden()
                     }
                 }
             }
         }
-        .padding()
+        .formStyle(.grouped)
+        .padding(.vertical, 8)
     }
 
     private func pickImage() {
@@ -138,7 +138,6 @@ struct AppearanceSettingsView: View {
 
 struct TerminalSettingsView: View {
     @ObservedObject var settings: AppSettings
-    @State private var fontSearch: String = ""
 
     var body: some View {
         Form {
@@ -152,21 +151,20 @@ struct TerminalSettingsView: View {
                 }
                 .pickerStyle(.menu)
 
-                HStack {
-                    Text("字号")
-                    Spacer()
-                    Stepper(
-                        "\(Int(settings.appearance.fontSize)) pt",
-                        value: $settings.appearance.fontSize,
-                        in: 8...48,
-                        step: 1
-                    )
+                Stepper(
+                    value: $settings.appearance.fontSize,
+                    in: 8...48,
+                    step: 1
+                ) {
+                    LabeledContent("字号") {
+                        Text("\(Int(settings.appearance.fontSize)) pt")
+                            .monospacedDigit()
+                    }
                 }
 
-                // Preview
                 Text("AaBbCcDd 012345 !@#$%")
                     .font(.custom(settings.appearance.fontName, size: settings.appearance.fontSize))
-                    .padding(8)
+                    .padding(10)
                     .frame(maxWidth: .infinity, alignment: .leading)
                     .background(Color(settings.currentTheme.background.nsColor))
                     .foregroundColor(Color(settings.currentTheme.foreground.nsColor))
@@ -178,24 +176,28 @@ struct TerminalSettingsView: View {
             }
 
             Section("滚动缓冲") {
-                HStack {
-                    Text("缓冲行数")
-                    Spacer()
-                    TextField("", value: $settings.scrollbackLines, format: .number)
-                        .textFieldStyle(.roundedBorder)
-                        .frame(width: 80)
-                    Text("行")
+                LabeledContent("缓冲行数") {
+                    HStack(spacing: 4) {
+                        TextField("", value: $settings.scrollbackLines, format: .number)
+                            .textFieldStyle(.roundedBorder)
+                            .multilineTextAlignment(.trailing)
+                            .frame(width: 80)
+                        Text("行")
+                            .foregroundColor(.secondary)
+                    }
                 }
             }
 
             Section("标签页标题") {
                 TextField("标题模板", text: $settings.tabTitleTemplate)
                     .textFieldStyle(.roundedBorder)
-                Text("可用变量: {hostname} {user} {ip} {alias} {index}")
-                    .font(.caption2).foregroundColor(.secondary)
+                Text("可用变量: {hostname}  {user}  {ip}  {alias}  {index}")
+                    .font(.caption)
+                    .foregroundColor(.secondary)
             }
         }
-        .padding()
+        .formStyle(.grouped)
+        .padding(.vertical, 8)
     }
 }
 
@@ -213,6 +215,7 @@ struct GeneralSettingsView: View {
                 Toggle("广播命令前显示确认对话框", isOn: $settings.confirmBroadcast)
             }
         }
-        .padding()
+        .formStyle(.grouped)
+        .padding(.vertical, 8)
     }
 }
