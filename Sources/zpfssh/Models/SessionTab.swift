@@ -74,6 +74,34 @@ indirect enum PaneLayout: Identifiable, Sendable {
                           second: second.updateRatio(splitID, ratio: ratio))
         }
     }
+
+    /// Flip the split direction (horizontal↔vertical) for a specific split node.
+    func toggleDirection(_ splitID: UUID) -> PaneLayout {
+        switch self {
+        case .leaf: return self
+        case .split(let sid, let dir, let ratio, let first, let second):
+            let newDir: SplitDirection = sid == splitID
+                ? (dir == .horizontal ? .vertical : .horizontal)
+                : dir
+            return .split(id: sid, direction: newDir, ratio: ratio,
+                          first: first.toggleDirection(splitID),
+                          second: second.toggleDirection(splitID))
+        }
+    }
+
+    /// Swap two leaf IDs in place — used for drag-to-rearrange panes.
+    func swapLeaves(_ a: UUID, _ b: UUID) -> PaneLayout {
+        switch self {
+        case .leaf(let id):
+            if id == a { return .leaf(id: b) }
+            if id == b { return .leaf(id: a) }
+            return self
+        case .split(let sid, let dir, let ratio, let first, let second):
+            return .split(id: sid, direction: dir, ratio: ratio,
+                          first: first.swapLeaves(a, b),
+                          second: second.swapLeaves(a, b))
+        }
+    }
 }
 
 @MainActor
@@ -134,6 +162,10 @@ class SessionTab: ObservableObject, Identifiable {
                 focusedPaneID = layout.allLeafIDs.first ?? UUID()
             }
         }
+    }
+
+    func swapPanes(_ a: UUID, _ b: UUID) {
+        layout = layout.swapLeaves(a, b)
     }
 
     func updateHostname(_ hostname: String, forPane paneID: UUID) {

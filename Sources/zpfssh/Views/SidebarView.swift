@@ -1,4 +1,5 @@
 import SwiftUI
+import UniformTypeIdentifiers
 
 struct SidebarView: View {
     @ObservedObject var serverStore: ServerStore
@@ -6,6 +7,11 @@ struct SidebarView: View {
     @State private var showAddServer: Bool = false
     @State private var editingServer: Server? = nil
     @State private var searchText: String = ""
+    @State private var showExporter: Bool = false
+    @State private var showImporter: Bool = false
+    @State private var exportFileDocument: ServerExportDocument? = nil
+    @State private var importErrorMessage: String = ""
+    @State private var showImportError: Bool = false
 
     var filtered: [Server] {
         if searchText.isEmpty { return serverStore.servers }
@@ -85,21 +91,34 @@ struct SidebarView: View {
             Divider()
 
             // Bottom toolbar
-            HStack {
+            HStack(spacing: 4) {
                 Button(action: { showAddServer = true }) {
-                    Label("添加服务器", systemImage: "plus")
-                        .font(.caption)
+                    Image(systemName: "plus")
+                        .font(.system(size: 12))
                 }
                 .buttonStyle(.plain)
-                .padding(.horizontal, 8)
+                .padding(.leading, 8)
                 .padding(.vertical, 6)
+                .help("添加服务器")
 
                 Spacer()
 
-                Text("\(serverStore.servers.count) 台服务器")
-                    .font(.caption2)
-                    .foregroundColor(.secondary)
-                    .padding(.trailing, 8)
+                Button(action: triggerImport) {
+                    Image(systemName: "square.and.arrow.down")
+                        .font(.system(size: 12))
+                }
+                .buttonStyle(.plain)
+                .padding(.vertical, 6)
+                .help("导入连接配置")
+
+                Button(action: triggerExport) {
+                    Image(systemName: "square.and.arrow.up")
+                        .font(.system(size: 12))
+                }
+                .buttonStyle(.plain)
+                .padding(.trailing, 8)
+                .padding(.vertical, 6)
+                .help("导出连接配置（含密码明文）")
             }
         }
         .frame(minWidth: 200, idealWidth: 220)
@@ -108,6 +127,25 @@ struct SidebarView: View {
         }
         .sheet(item: $editingServer) { server in
             AddServerView(serverStore: serverStore, editingServer: server)
+        }
+        .fileExporter(
+            isPresented: $showExporter,
+            document: exportFileDocument,
+            contentType: .json,
+            defaultFilename: "zpfssh-servers.json"
+        ) { _ in
+            exportFileDocument = nil
+        }
+        .fileImporter(
+            isPresented: $showImporter,
+            allowedContentTypes: [.json]
+        ) { result in
+            handleImport(result)
+        }
+        .alert("导入失败", isPresented: $showImportError) {
+            Button("确定") {}
+        } message: {
+            Text(importErrorMessage)
         }
     }
 
@@ -126,7 +164,55 @@ struct SidebarView: View {
             Button("删除", role: .destructive) { serverStore.delete(server) }
         }
     }
+
+    private func triggerExport() {
+        guard let data = serverStore.exportData() else { return }
+        exportFileDocument = ServerExportDocument(data: data)
+        showExporter = true
+    }
+
+    private func triggerImport() {
+        showImporter = true
+    }
+
+    private func handleImport(_ result: Result<URL, Error>) {
+        switch result {
+        case .success(let url):
+            do {
+                let data = try Data(contentsOf: url)
+                try serverStore.importData(data)
+            } catch {
+                importErrorMessage = error.localizedDescription
+                showImportError = true
+            }
+        case .failure(let error):
+            importErrorMessage = error.localizedDescription
+            showImportError = true
+        }
+    }
 }
+
+// MARK: - FileDocument for export
+
+struct ServerExportDocument: FileDocument {
+    static var readableContentTypes: [UTType] { [.json] }
+    var data: Data
+
+    init(data: Data) { self.data = data }
+
+    init(configuration: ReadConfiguration) throws {
+        guard let fileData = configuration.file.regularFileContents else {
+            throw CocoaError(.fileReadCorruptFile)
+        }
+        data = fileData
+    }
+
+    func fileWrapper(configuration: WriteConfiguration) throws -> FileWrapper {
+        FileWrapper(regularFileWithContents: data)
+    }
+}
+
+// MARK: - Row view
 
 struct ServerRowView: View {
     let server: Server

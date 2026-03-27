@@ -1,0 +1,25 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+    <!-- No sandbox: SSH apps need to spawn /usr/bin/ssh, /usr/bin/expect, /usr/bin/scp -->
+    <key>com.apple.security.app-sandbox</key>
+    <false/>
+
+    <!-- Outbound network connections (SSH) -->
+    <key>com.apple.security.network.client</key>
+    <true/>
+
+    <!-- Read/write files chosen by the user (SFTP downloads/uploads) -->
+    <key>com.apple.security.files.user-selected.read-write</key>
+    <true/>
+
+    <!-- Read/write ~/Downloads -->
+    <key>com.apple.security.files.downloads.read-write</key>
+    <true/>
+
+    <!-- Hardened runtime: allow forking child processes (ssh, scp, expect) -->
+    <key>com.apple.security.cs.allow-unsigned-executable-memory</key>
+    <true/>
+</dict>
+</plist>

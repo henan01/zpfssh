@@ -4,9 +4,13 @@ import UniformTypeIdentifiers
 
 private let minPaneSize: CGFloat = 160   // minimum pane dimension
 
+/// UTType used to transfer pane IDs during drag-to-rearrange
+private let paneUTType = UTType.plainText
+
 struct TerminalContainerView: View {
     @ObservedObject var tab: SessionTab
-    @ObservedObject var sessionManager: SessionManager
+    // NOTE: settings is observed so theme/font changes propagate; sessionManager is NOT
+    // observed here to avoid re-rendering all terminal views on every tab switch.
     @ObservedObject var settings: AppSettings
     var searchText: String = ""
     var searchActive: Bool = false
@@ -40,7 +44,6 @@ struct TerminalContainerView: View {
                     searchActive: searchActive,
                     onFocus: { tab.focusedPaneID = id },
                     onClose: { tab.closePane(id) },
-                    sessionManager: sessionManager,
                     onFileDrop: { [dropSFTP] urls in
                         dropSFTP.connectForUpload(to: paneServer, password: panePassword)
                         for url in urls {
@@ -60,7 +63,6 @@ struct TerminalContainerView: View {
                     let totalW = geo.size.width
                     let divW: CGFloat = 4
                     let available = totalW - divW
-                    // Clamp ratio so neither pane goes below minPaneSize
                     let clampedRatio = available > 0
                         ? max(minPaneSize / available, min(1 - minPaneSize / available, ratio))
                         : ratio
@@ -69,15 +71,11 @@ struct TerminalContainerView: View {
                     HStack(spacing: 0) {
                         paneView(for: first)
                             .frame(width: leftW)
-                        // Draggable divider
+                        // Draggable divider — drag to resize, right-click to flip direction
                         Rectangle()
                             .fill(Color(NSColor.separatorColor))
                             .frame(width: divW)
-                            .overlay(
-                                Rectangle()
-                                    .fill(Color.clear)
-                                    .frame(width: 12)
-                            )
+                            .overlay(Rectangle().fill(Color.clear).frame(width: 12))
                             .gesture(DragGesture()
                                 .onChanged { value in
                                     let newRatio = max(0.15, min(0.85,
@@ -86,6 +84,19 @@ struct TerminalContainerView: View {
                                 }
                             )
                             .cursor(.resizeLeftRight)
+                            .contextMenu {
+                                Button {
+                                    tab.layout = tab.layout.toggleDirection(splitID)
+                                } label: {
+                                    Label("改为上下分屏", systemImage: "rectangle.split.1x2")
+                                }
+                                Divider()
+                                Button("关闭右侧面板", role: .destructive) {
+                                    if let id = second.allLeafIDs.first {
+                                        tab.closePane(id)
+                                    }
+                                }
+                            }
                         paneView(for: second)
                     }
                 }
@@ -108,11 +119,7 @@ struct TerminalContainerView: View {
                         Rectangle()
                             .fill(Color(NSColor.separatorColor))
                             .frame(height: divH)
-                            .overlay(
-                                Rectangle()
-                                    .fill(Color.clear)
-                                    .frame(height: 12)
-                            )
+                            .overlay(Rectangle().fill(Color.clear).frame(height: 12))
                             .gesture(DragGesture()
                                 .onChanged { value in
                                     let newRatio = max(0.15, min(0.85,
@@ -121,6 +128,19 @@ struct TerminalContainerView: View {
                                 }
                             )
                             .cursor(.resizeUpDown)
+                            .contextMenu {
+                                Button {
+                                    tab.layout = tab.layout.toggleDirection(splitID)
+                                } label: {
+                                    Label("改为左右分屏", systemImage: "rectangle.split.2x1")
+                                }
+                                Divider()
+                                Button("关闭下方面板", role: .destructive) {
+                                    if let id = second.allLeafIDs.first {
+                                        tab.closePane(id)
+                                    }
+                                }
+                            }
                         paneView(for: second)
                     }
                 }
@@ -180,10 +200,10 @@ struct PaneContainer: View {
     var searchActive: Bool = false
     var onFocus: () -> Void = {}
     var onClose: () -> Void = {}
-    @ObservedObject var sessionManager: SessionManager
     var onFileDrop: (([URL]) -> Void)? = nil
 
     @State private var isDropTargeted = false
+    @State private var isPaneSwapTarget = false
 
     var isSplit: Bool { tab.layout.allLeafIDs.count > 1 }
 
@@ -209,6 +229,7 @@ struct PaneContainer: View {
                 searchActive: searchActive
             )
             .overlay(dropOverlay)
+            .overlay(paneSwapOverlay)
             .overlay(
                 RoundedRectangle(cornerRadius: 0)
                     .strokeBorder(isFocused ? Color.accentColor.opacity(0.6) : Color.clear,
@@ -240,6 +261,19 @@ struct PaneContainer: View {
                 }
                 return true
             }
+            // Accept a dragged pane header → swap the two panes in the layout
+            .onDrop(of: [paneUTType], isTargeted: $isPaneSwapTarget) { providers in
+                guard let provider = providers.first else { return false }
+                _ = provider.loadObject(ofClass: NSString.self) { item, _ in
+                    guard let str = item as? String,
+                          let sourceID = UUID(uuidString: str),
+                          sourceID != paneID else { return }
+                    DispatchQueue.main.async {
+                        tab.swapPanes(sourceID, paneID)
+                    }
+                }
+                return true
+            }
         }
     }
 
@@ -259,6 +293,16 @@ struct PaneContainer: View {
             .allowsHitTesting(false)
         }
     }
+
+    @ViewBuilder
+    private var paneSwapOverlay: some View {
+        if isPaneSwapTarget {
+            RoundedRectangle(cornerRadius: 4)
+                .strokeBorder(Color.accentColor, lineWidth: 2)
+                .background(Color.accentColor.opacity(0.08))
+                .allowsHitTesting(false)
+        }
+    }
 }
 
 // MARK: - Pane Header Bar
@@ -274,6 +318,17 @@ struct PaneHeaderBar: View {
 
     var body: some View {
         HStack(spacing: 6) {
+            // Drag handle — drag this header to rearrange panes
+            Image(systemName: "line.3.horizontal")
+                .font(.system(size: 10))
+                .foregroundColor(.secondary.opacity(0.6))
+                .padding(.leading, 2)
+                .onDrag {
+                    NSItemProvider(object: paneID.uuidString as NSString)
+                }
+                .cursor(.openHand)
+                .help("拖动以交换面板位置")
+
             Circle()
                 .fill(pane?.isConnected == true ? Color.green : Color.gray)
                 .frame(width: 6, height: 6)

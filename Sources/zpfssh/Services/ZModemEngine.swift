@@ -75,7 +75,9 @@ final class ZModemEngine {
         case dataSubpacket([UInt8], esc: Bool)
         /// Drains CRC bytes that follow a data subpacket terminator (CRC-16 = 2 decoded bytes).
         /// We don't validate CRC, but must consume these bytes so they don't reach the terminal.
-        case drainCrc(Int, esc: Bool)
+        /// `continueData`: if true, go back to dataSubpacket after drain (ZCRCG streaming);
+        /// if false, go to idle (new frame header expected).
+        case drainCrc(Int, esc: Bool, continueData: Bool)
     }
     private var phase: Phase = .idle
     private var frameType: UInt8 = 0
@@ -206,34 +208,41 @@ final class ZModemEngine {
                 // Only regular escaped data bytes are XOR'd with 0x40.
                 if b == ZCRCE || b == ZCRCG || b == ZCRCQ || b == ZCRCW {
                     handleDataSubpacket(raw, terminator: b)
-                    // Must drain the 2 CRC-16 bytes that follow before returning to idle.
-                    phase = .drainCrc(2, esc: false)
+                    // ZCRCG = streaming "go" → sender immediately sends next chunk with no
+                    // new frame header, so go back to dataSubpacket after draining the CRC.
+                    // ZCRCQ = "ack required" but data also continues immediately.
+                    // All other terminators (ZCRCW, ZCRCE) expect a new frame header next.
+                    let cont = (b == ZCRCG || b == ZCRCQ)
+                    phase = .drainCrc(2, esc: false, continueData: cont)
                 } else {
                     raw.append(b ^ 0x40)
                     phase = .dataSubpacket(raw, esc: false)
                 }
             } else if b == ZDLE {
                 phase = .dataSubpacket(raw, esc: true)
-            } else if b == ZPAD {
-                phase = .gotStar
             } else {
+                // ZPAD (0x2A '*') is NOT in lrzsz's escape set, so it can appear as plain
+                // file data inside a subpacket. Treat it — and every other byte — as data.
                 raw.append(b)
                 phase = .dataSubpacket(raw, esc: false)
             }
             return nil
 
-        case .drainCrc(let remaining, let esc):
+        case .drainCrc(let remaining, let esc, let continueData):
             if esc {
                 let newRemaining = remaining - 1
-                phase = newRemaining > 0 ? .drainCrc(newRemaining, esc: false) : .idle
+                phase = newRemaining > 0
+                    ? .drainCrc(newRemaining, esc: false, continueData: continueData)
+                    : (continueData ? .dataSubpacket([], esc: false) : .idle)
             } else if b == ZDLE {
-                phase = .drainCrc(remaining, esc: true)
-            } else if b == ZPAD {
-                // Next frame is starting early — treat as start of new frame.
-                phase = .gotStar
+                phase = .drainCrc(remaining, esc: true, continueData: continueData)
             } else {
+                // Treat every byte — including ZPAD (0x2A) — as a CRC byte; a legitimate
+                // CRC value can be 0x2A and it is never ZDLE-escaped by lrzsz.
                 let newRemaining = remaining - 1
-                phase = newRemaining > 0 ? .drainCrc(newRemaining, esc: false) : .idle
+                phase = newRemaining > 0
+                    ? .drainCrc(newRemaining, esc: false, continueData: continueData)
+                    : (continueData ? .dataSubpacket([], esc: false) : .idle)
             }
             return nil
         }

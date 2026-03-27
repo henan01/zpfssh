@@ -1,6 +1,20 @@
 import Foundation
 import SwiftUI
 
+// MARK: - Import / Export types
+
+struct ServerExportFile: Codable {
+    var version: Int = 1
+    var servers: [ServerExportEntry]
+}
+
+struct ServerExportEntry: Codable {
+    var server: Server
+    var password: String?
+}
+
+// MARK: - Store
+
 @MainActor
 class ServerStore: ObservableObject {
     @Published var servers: [Server] = []
@@ -61,6 +75,41 @@ class ServerStore: ObservableObject {
 
     func ungroupedServers() -> [Server] {
         servers.filter { $0.group.isEmpty }
+    }
+
+    // MARK: – Import / Export
+
+    /// Export all servers (with plaintext passwords) as JSON data.
+    func exportData() -> Data? {
+        let entries = servers.map { server in
+            ServerExportEntry(
+                server: server,
+                password: CredentialService.shared.load(for: server.id)
+            )
+        }
+        let file = ServerExportFile(servers: entries)
+        return try? JSONEncoder().encode(file)
+    }
+
+    /// Import servers from exported JSON data.
+    /// Existing servers with the same ID are updated; new ones are appended.
+    func importData(_ data: Data) throws {
+        let file = try JSONDecoder().decode(ServerExportFile.self, from: data)
+        for entry in file.servers {
+            if let idx = servers.firstIndex(where: { $0.id == entry.server.id }) {
+                servers[idx] = entry.server
+                if let pw = entry.password, !pw.isEmpty {
+                    CredentialService.shared.save(pw, for: entry.server.id)
+                }
+            } else {
+                servers.append(entry.server)
+                if let pw = entry.password, !pw.isEmpty {
+                    CredentialService.shared.save(pw, for: entry.server.id)
+                }
+            }
+        }
+        updateGroups()
+        save()
     }
 
     // MARK: – Private

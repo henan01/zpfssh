@@ -3,7 +3,7 @@ import Security
 
 final class KeychainService: @unchecked Sendable {
     static let shared = KeychainService()
-    private let service = "com.zenlite.ZenSSH"
+    private let service = "com.zpf.ssh"
     private init() {}
 
     func savePassword(_ password: String, for serverID: UUID) {

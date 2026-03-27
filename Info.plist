@@ -7,7 +7,7 @@
     <key>CFBundleExecutable</key>
     <string>zpfssh</string>
     <key>CFBundleIdentifier</key>
-    <string>com.zenlite.zpfssh</string>
+    <string>com.zpf.ssh</string>
     <key>CFBundleInfoDictionaryVersion</key>
     <string>6.0</string>
     <key>CFBundleIconFile</key>

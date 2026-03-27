@@ -20,10 +20,10 @@ mkdir -p "$APP_NAME.app/Contents/Resources"
 
 cp ".build/release/$APP_NAME" "$APP_NAME.app/Contents/MacOS/"
 cp "Info.plist" "$APP_NAME.app/Contents/"
-cp "Sources/ZenSSH/Resources/AppIcon.icns" "$APP_NAME.app/Contents/Resources/"
+cp "Sources/zpfssh/Resources/AppIcon.icns" "$APP_NAME.app/Contents/Resources/"
 
 echo "==> 代码签名 (ad-hoc, with entitlements) ..."
-codesign --force --deep --sign - --entitlements "ZenSSH.entitlements" "$APP_NAME.app"
+codesign --force --deep --sign - --entitlements "zpfssh.entitlements" "$APP_NAME.app"
 
 echo ""
 echo "✅ 构建完成: $(pwd)/$APP_NAME.app"

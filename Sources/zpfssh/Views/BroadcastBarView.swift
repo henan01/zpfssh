@@ -5,60 +5,68 @@ struct BroadcastBarView: View {
     @ObservedObject var sessionManager: SessionManager
     @State private var inputText: String = ""
     @State private var showConfirm: Bool = false
+    @State private var showTargets: Bool = false
     @FocusState private var isFocused: Bool
 
     var body: some View {
         VStack(spacing: 0) {
-            // Target tabs selector
-            ScrollView(.horizontal, showsIndicators: false) {
-                HStack(spacing: 6) {
-                    ForEach(sessionManager.tabs) { tab in
-                        BroadcastTabChip(
-                            tab: tab,
-                            isSelected: sessionManager.broadcastTargetIDs.contains(tab.id),
-                            onToggle: { sessionManager.toggleBroadcastTarget(tab) }
-                        )
+            // Collapsible target selector
+            if showTargets {
+                ScrollView(.horizontal, showsIndicators: false) {
+                    HStack(spacing: 5) {
+                        ForEach(sessionManager.tabs) { tab in
+                            BroadcastTabChip(
+                                tab: tab,
+                                isSelected: sessionManager.broadcastTargetIDs.contains(tab.id),
+                                onToggle: { sessionManager.toggleBroadcastTarget(tab) }
+                            )
+                        }
                     }
+                    .padding(.horizontal, 10)
+                    .padding(.vertical, 5)
                 }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 6)
+
+                Divider()
             }
 
-            Divider()
-
             // Input row
-            HStack(spacing: 8) {
+            HStack(spacing: 6) {
                 Image(systemName: "antenna.radiowaves.left.and.right")
                     .foregroundColor(.orange)
-                    .font(.system(size: 13))
+                    .font(.system(size: 12))
 
-                Text("广播:")
-                    .foregroundColor(.secondary)
-                    .font(.caption)
-                    .bold()
-
-                TextField("输入命令，发送到所有选中标签页...", text: $inputText)
+                TextField("广播命令...", text: $inputText)
                     .textFieldStyle(.plain)
+                    .font(.system(size: 12))
                     .focused($isFocused)
                     .onSubmit { sendBroadcast() }
+
+                // Toggle target list
+                Button(action: { withAnimation(.easeInOut(duration: 0.15)) { showTargets.toggle() } }) {
+                    Image(systemName: showTargets ? "chevron.down" : "chevron.up")
+                        .font(.system(size: 10))
+                        .foregroundColor(.secondary)
+                }
+                .buttonStyle(.plain)
+                .help(showTargets ? "收起目标列表" : "展开目标列表")
 
                 Button("发送") {
                     sendBroadcast()
                 }
+                .font(.system(size: 11))
                 .keyboardShortcut(.return, modifiers: .command)
                 .disabled(inputText.trimmingCharacters(in: .whitespaces).isEmpty)
 
                 Button(action: { isVisible = false }) {
                     Image(systemName: "xmark")
+                        .font(.system(size: 10))
                 }
                 .buttonStyle(.plain)
             }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 7)
+            .padding(.bottom, 2)
         }
-        .background(.regularMaterial)
-        .clipShape(RoundedRectangle(cornerRadius: 10))
-        .shadow(radius: 6)
         .onAppear { isFocused = true }
         .alert("确认广播", isPresented: $showConfirm) {
             Button("取消", role: .cancel) {}
@@ -97,16 +105,16 @@ struct BroadcastTabChip: View {
             HStack(spacing: 4) {
                 Circle()
                     .fill(tab.isConnected ? Color.green : Color.gray)
-                    .frame(width: 6, height: 6)
+                    .frame(width: 5, height: 5)
                 Text(tab.displayTitle)
-                    .font(.caption)
+                    .font(.caption2)
                     .lineLimit(1)
             }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 4)
+            .padding(.horizontal, 8)
+            .padding(.vertical, 3)
             .background(isSelected ? Color.orange.opacity(0.2) : Color.secondary.opacity(0.1))
             .overlay(
-                RoundedRectangle(cornerRadius: 12)
+                RoundedRectangle(cornerRadius: 10)
                     .strokeBorder(isSelected ? Color.orange : Color.clear, lineWidth: 1)
             )
             .clipShape(Capsule())

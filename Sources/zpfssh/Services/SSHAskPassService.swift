@@ -25,7 +25,7 @@ final class SSHAskPassService: @unchecked Sendable {
         let appSupport = FileManager.default.urls(
             for: .applicationSupportDirectory, in: .userDomainMask
         ).first!
-        let dir = appSupport.appendingPathComponent("com.zenlite.ZenSSH")
+        let dir = appSupport.appendingPathComponent(CredentialService.appSupportID)
         try? FileManager.default.createDirectory(at: dir,
             withIntermediateDirectories: true,
             attributes: [.posixPermissions: 0o700])

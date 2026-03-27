@@ -18,6 +18,7 @@ struct AddServerView: View {
     @State private var color: ServerColor = .blue
     @State private var showError: Bool = false
     @State private var errorMessage: String = ""
+    @State private var showPassword: Bool = false
 
     var isEditing: Bool { editingServer != nil }
 
@@ -78,8 +79,21 @@ struct AddServerView: View {
                             switch authType {
                             case .password:
                                 FormRow("密码") {
-                                    SecureField("SSH 密码", text: $password)
-                                        .textFieldStyle(.roundedBorder)
+                                    HStack(spacing: 4) {
+                                        if showPassword {
+                                            TextField("SSH 密码", text: $password)
+                                                .textFieldStyle(.roundedBorder)
+                                        } else {
+                                            SecureField("SSH 密码", text: $password)
+                                                .textFieldStyle(.roundedBorder)
+                                        }
+                                        Button(action: { showPassword.toggle() }) {
+                                            Image(systemName: showPassword ? "eye.slash" : "eye")
+                                                .foregroundColor(.secondary)
+                                        }
+                                        .buttonStyle(.plain)
+                                        .help(showPassword ? "隐藏密码" : "显示密码")
+                                    }
                                 }
                             case .privateKey:
                                 FormRow("私钥路径") {

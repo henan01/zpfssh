@@ -8,8 +8,20 @@ class SessionManager: ObservableObject {
     @Published var broadcastTargetIDs: Set<UUID> = []
     @Published var isBroadcastMode: Bool = false
 
+    /// The tab shown in the secondary (right/bottom) split pane. nil = no cross-tab split.
+    @Published var splitTabID: UUID? = nil
+    /// Ratio of primary pane width to total width (0.2 … 0.8).
+    @Published var splitRatio: CGFloat = 0.5
+    /// Cross-tab split direction.
+    @Published var splitDirection: SplitDirection = .horizontal
+
     var activeTab: SessionTab? {
         tabs.first { $0.id == activeTabID }
+    }
+
+    var splitTab: SessionTab? {
+        guard let id = splitTabID else { return nil }
+        return tabs.first { $0.id == id }
     }
 
     var connectedTabs: [SessionTab] {
@@ -25,6 +37,7 @@ class SessionManager: ObservableObject {
     func closeTab(_ tab: SessionTab) {
         tabs.removeAll { $0.id == tab.id }
         broadcastTargetIDs.remove(tab.id)
+        if splitTabID == tab.id { splitTabID = nil }
         if activeTabID == tab.id {
             activeTabID = tabs.last?.id
         }
@@ -58,7 +71,40 @@ class SessionManager: ObservableObject {
     }
 
     func activateTab(_ tab: SessionTab) {
+        if tab.id == splitTabID {
+            // Clicking the split tab swaps primary and secondary panes
+            splitTabID = activeTabID
+        }
         activeTabID = tab.id
+    }
+
+    /// Show `tab` in the secondary split pane alongside the current active tab.
+    func setSplitTab(_ tab: SessionTab, direction: SplitDirection = .horizontal) {
+        guard tab.id != activeTabID else { return }
+        splitDirection = direction
+        splitTabID = tab.id
+    }
+
+    /// Close the cross-tab split view (does NOT close the tab itself).
+    func closeSplit() {
+        splitTabID = nil
+    }
+
+    /// Split active tab with a neighboring existing tab (preserves both live sessions).
+    /// Returns true if a split target was found.
+    @discardableResult
+    func splitWithNeighborTab(direction: SplitDirection = .horizontal) -> Bool {
+        guard let activeID = activeTabID,
+              let activeIndex = tabs.firstIndex(where: { $0.id == activeID }),
+              tabs.count > 1 else {
+            return false
+        }
+
+        let neighborIndex = activeIndex + 1 < tabs.count ? (activeIndex + 1) : (activeIndex - 1)
+        guard tabs.indices.contains(neighborIndex) else { return false }
+        splitDirection = direction
+        splitTabID = tabs[neighborIndex].id
+        return true
     }
 
     func moveTab(from source: IndexSet, to destination: Int) {

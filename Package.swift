@@ -2,10 +2,10 @@
 import PackageDescription
 
 let package = Package(
-    name: "ZenSSH",
+    name: "zpfssh",
     platforms: [.macOS(.v14)],
     products: [
-        .executable(name: "zpfssh", targets: ["ZenSSH"])
+        .executable(name: "zpfssh", targets: ["zpfssh"])
     ],
     dependencies: [
         .package(url: "https://github.com/migueldeicaza/SwiftTerm.git", from: "1.2.0"),
@@ -14,12 +14,12 @@ let package = Package(
     ],
     targets: [
         .executableTarget(
-            name: "ZenSSH",
+            name: "zpfssh",
             dependencies: [
                 .product(name: "SwiftTerm", package: "SwiftTerm"),
                 .product(name: "Citadel", package: "Citadel"),
             ],
-            path: "Sources/ZenSSH",
+            path: "Sources/zpfssh",
             swiftSettings: [
                 .unsafeFlags(["-suppress-warnings"])
             ]
