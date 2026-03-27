@@ -90,7 +90,6 @@ struct TerminalPaneView: NSViewRepresentable {
             applyDropCallbacks(to: cached)
             applyAppearanceIfNeeded(to: cached, context: context)
             registerNotifications(for: cached, coordinator: context.coordinator)
-            registerKeyboardCompatibility(for: cached, coordinator: context.coordinator)
             registerFocusDetection(for: cached, coordinator: context.coordinator)
             return cached
         }
@@ -100,7 +99,6 @@ struct TerminalPaneView: NSViewRepresentable {
         tab.paneSessions[paneID]?.cachedTerminalView = tv
         applyAppearanceIfNeeded(to: tv, context: context)
         registerNotifications(for: tv, coordinator: context.coordinator)
-        registerKeyboardCompatibility(for: tv, coordinator: context.coordinator)
         registerFocusDetection(for: tv, coordinator: context.coordinator)
         return tv
     }
@@ -264,30 +262,6 @@ struct TerminalPaneView: NSViewRepresentable {
         }
 
         coordinator.observers = [o1, o2, o3, o4]
-    }
-
-    /// Maps macOS Home/End-style keys to terminal-compatible sequences.
-    /// This also covers compact keyboards where `fn+←/→` behaves like Home/End.
-    private func registerKeyboardCompatibility(for tv: TerminalView, coordinator: TerminalCoordinator) {
-        let monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak tv] event in
-            guard let tv, tv.window?.firstResponder === tv else { return event }
-
-            let isFnArrow = event.modifierFlags.contains(.function)
-                && (event.keyCode == 123 || event.keyCode == 124)
-            let isHomeEnd = event.keyCode == 115 || event.keyCode == 119
-            guard isFnArrow || isHomeEnd else { return event }
-
-            switch event.keyCode {
-            case 123, 115:
-                tv.send(txt: "\u{1B}[H")
-            case 124, 119:
-                tv.send(txt: "\u{1B}[F")
-            default:
-                return event
-            }
-            return nil
-        }
-        if let monitor { coordinator.keyMonitors.append(monitor) }
     }
 
     /// Detects mouse-down on the terminal and triggers focus WITHOUT consuming the event.
