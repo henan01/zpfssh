@@ -35,5 +35,32 @@
         <key>NSAllowsArbitraryLoads</key>
         <true/>
     </dict>
+    <key>UTExportedTypeDeclarations</key>
+    <array>
+        <dict>
+            <key>UTTypeIdentifier</key>
+            <string>com.zpfssh.tab-id</string>
+            <key>UTTypeDescription</key>
+            <string>ZenSSH Tab Identifier</string>
+            <key>UTTypeConformsTo</key>
+            <array>
+                <string>public.data</string>
+            </array>
+            <key>UTTypeTagSpecification</key>
+            <dict/>
+        </dict>
+        <dict>
+            <key>UTTypeIdentifier</key>
+            <string>com.zpfssh.pane-id</string>
+            <key>UTTypeDescription</key>
+            <string>ZenSSH Pane Identifier</string>
+            <key>UTTypeConformsTo</key>
+            <array>
+                <string>public.data</string>
+            </array>
+            <key>UTTypeTagSpecification</key>
+            <dict/>
+        </dict>
+    </array>
 </dict>
 </plist>

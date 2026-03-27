@@ -7,14 +7,12 @@ import SwiftTerm
 final class TerminalCoordinator: NSObject, LocalProcessTerminalViewDelegate, @unchecked Sendable {
     var paneID: UUID
     var tab: SessionTab?
+    var onFocus: (() -> Void)?
     var lastSearchText: String = ""
-    // Appearance cache — avoids redundant AppKit calls on every tab switch
     var lastThemeID: String = ""
     var lastFontName: String = ""
     var lastFontSize: Double = 0
-    // Notification observer tokens — stored so they can be removed in dismantleNSView
     var observers: [NSObjectProtocol] = []
-    // Local key monitor tokens for NSEvent.removeMonitor(_:)
     var keyMonitors: [Any] = []
 
     init(paneID: UUID) {
@@ -66,6 +64,12 @@ struct TerminalPaneView: NSViewRepresentable {
     @ObservedObject var settings: AppSettings
     var searchText: String
     var searchActive: Bool
+    var onFocus: (() -> Void)? = nil
+    var onHighlightChange: ((PaneDropPosition?) -> Void)? = nil
+    var onFileHighlightChange: ((Bool) -> Void)? = nil
+    var onMergeTab: ((UUID, PaneDropPosition) -> Void)? = nil
+    var onMovePane: ((UUID, PaneDropPosition) -> Void)? = nil
+    var onFileDrop: (([URL]) -> Void)? = nil
 
     func makeCoordinator() -> TerminalCoordinator {
         TerminalCoordinator(paneID: paneID)
@@ -73,16 +77,36 @@ struct TerminalPaneView: NSViewRepresentable {
 
     func makeNSView(context: Context) -> TerminalView {
         context.coordinator.tab = tab
+        context.coordinator.onFocus = onFocus
+
+        // Reuse cached terminal view to preserve SSH connection across layout changes.
+        // When a pane is split, SwiftUI rebuilds the view tree (AnyView structure changes),
+        // which would normally dismantle the old TerminalView and create a new one.
+        // By caching the NSView in PaneSession, we keep the SSH process alive.
+        if let cached = tab.paneSessions[paneID]?.cachedTerminalView as? LocalProcessTerminalView {
+            cached.removeFromSuperview()
+            cached.processDelegate = context.coordinator
+            cached.autoresizingMask = [.width, .height]
+            applyDropCallbacks(to: cached)
+            applyAppearanceIfNeeded(to: cached, context: context)
+            registerNotifications(for: cached, coordinator: context.coordinator)
+            registerKeyboardCompatibility(for: cached, coordinator: context.coordinator)
+            registerFocusDetection(for: cached, coordinator: context.coordinator)
+            return cached
+        }
 
         let tv = makeZModemView(coordinator: context.coordinator)
         tv.autoresizingMask = [.width, .height]
+        tab.paneSessions[paneID]?.cachedTerminalView = tv
         applyAppearanceIfNeeded(to: tv, context: context)
         registerNotifications(for: tv, coordinator: context.coordinator)
         registerKeyboardCompatibility(for: tv, coordinator: context.coordinator)
+        registerFocusDetection(for: tv, coordinator: context.coordinator)
         return tv
     }
 
     func updateNSView(_ tv: TerminalView, context: Context) {
+        applyDropCallbacks(to: tv)
         applyAppearanceIfNeeded(to: tv, context: context)
 
         if searchActive && !searchText.isEmpty {
@@ -97,8 +121,10 @@ struct TerminalPaneView: NSViewRepresentable {
         }
     }
 
-    /// Called by SwiftUI when the view is removed from the hierarchy (pane or tab closed).
-    /// This is the correct place to terminate the SSH subprocess and remove observers.
+    /// Called by SwiftUI when the view is removed from the hierarchy.
+    /// Only terminates the SSH subprocess if the pane was actually closed or replaced.
+    /// Layout-only changes (splits, resizes) should NOT kill the connection — the
+    /// cached terminal view will be reused in the next makeNSView call.
     static func dismantleNSView(_ nsView: TerminalView, coordinator: TerminalCoordinator) {
         // Remove notification observers — prevents dead observer accumulation
         coordinator.observers.forEach { NotificationCenter.default.removeObserver($0) }
@@ -106,18 +132,24 @@ struct TerminalPaneView: NSViewRepresentable {
         coordinator.keyMonitors.forEach { NSEvent.removeMonitor($0) }
         coordinator.keyMonitors.removeAll()
 
-        // Terminate the SSH subprocess (sends SIGTERM + closes pty)
-        // Without this, /usr/bin/ssh processes become orphans after pane/tab close.
-        (nsView as? LocalProcessTerminalView)?.terminate()
+        // Only terminate SSH if the pane was truly closed (removed from paneSessions)
+        // or replaced (cachedTerminalView is a different instance).
+        // When just repositioning (split/resize), the cached view === nsView → keep alive.
+        let cached = coordinator.tab?.paneSessions[coordinator.paneID]?.cachedTerminalView
+        if cached == nil || cached !== nsView {
+            (nsView as? LocalProcessTerminalView)?.terminate()
+        }
     }
 
     // MARK: - View factory
 
     /// Launches /usr/bin/ssh directly for all auth types.
-    /// Uses ZModemTerminalView so that `sz` transfers work automatically.
+    /// Uses ZModemTerminalView so that `sz` transfers work automatically
+    /// and pane/tab drag-and-drop is handled at the AppKit level.
     private func makeZModemView(coordinator: TerminalCoordinator) -> ZModemTerminalView {
         let tv = ZModemTerminalView(frame: .zero)
         tv.processDelegate = coordinator
+        applyDropCallbacks(to: tv)
 
         var sshEnv = ProcessInfo.processInfo.environment
         let executable: String
@@ -140,6 +172,21 @@ struct TerminalPaneView: NSViewRepresentable {
             tab?.setConnected(true, forPane: paneID)
         }
         return tv
+    }
+
+    // MARK: - Drop callbacks
+
+    /// Applies drag-and-drop callbacks to the terminal view.
+    /// Called on create, reuse, and update to keep closures current.
+    private func applyDropCallbacks(to tv: TerminalView) {
+        guard let ztv = tv as? ZModemTerminalView else { return }
+        ztv.currentTabID = tab.id
+        ztv.targetPaneID = paneID
+        ztv.onHighlightChange = onHighlightChange
+        ztv.onFileHighlightChange = onFileHighlightChange
+        ztv.onMergeTab = onMergeTab
+        ztv.onMovePane = onMovePane
+        ztv.onPaneFileDrop = onFileDrop
     }
 
     // MARK: - Appearance
@@ -240,8 +287,26 @@ struct TerminalPaneView: NSViewRepresentable {
             }
             return nil
         }
-        coordinator.keyMonitors.append(monitor)
+        if let monitor { coordinator.keyMonitors.append(monitor) }
+    }
+
+    /// Detects mouse-down on the terminal and triggers focus WITHOUT consuming the event.
+    /// This replaces the old SwiftUI .onTapGesture approach which blocked all clicks
+    /// from reaching the AppKit TerminalView, preventing keyboard input entirely.
+    private func registerFocusDetection(for tv: TerminalView, coordinator: TerminalCoordinator) {
+        let monitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown]) { [weak tv] event in
+            guard let tv, let window = tv.window, let contentView = window.contentView else {
+                return event
+            }
+            let hitView = contentView.hitTest(event.locationInWindow)
+            if hitView === tv || (hitView != nil && hitView!.isDescendant(of: tv)) {
+                coordinator.onFocus?()
+                if window.firstResponder !== tv {
+                    window.makeFirstResponder(tv)
+                }
+            }
+            return event
+        }
+        if let monitor { coordinator.keyMonitors.append(monitor) }
     }
 }
-
-// PaneContainer is defined in TerminalContainerView.swift

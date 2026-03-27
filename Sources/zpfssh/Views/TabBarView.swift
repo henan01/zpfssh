@@ -1,6 +1,8 @@
 import SwiftUI
 import UniformTypeIdentifiers
 
+private let tabUTType = UTType(exportedAs: "com.zpfssh.tab-id")
+
 // MARK: - Tab Bar
 
 struct TabBarView: View {
@@ -11,6 +13,8 @@ struct TabBarView: View {
     @State private var renameText: String = ""
 
     var hasSplit: Bool { sessionManager.splitTabID != nil }
+
+    @State private var dragOverTabID: UUID? = nil
 
     var body: some View {
         HStack(spacing: 0) {
@@ -24,11 +28,32 @@ struct TabBarView: View {
                             isBroadcastTarget: sessionManager.broadcastTargetIDs.contains(tab.id),
                             isBroadcastMode: sessionManager.isBroadcastMode,
                             isRenaming: renamingTabID == tab.id,
+                            isDragOver: dragOverTabID == tab.id,
                             renameText: $renameText,
                             onActivate: { sessionManager.activateTab(tab) },
                             onClose: { sessionManager.closeTab(tab) },
                             onDuplicate: { sessionManager.duplicateTab(tab) },
-                            onSplitPane: { sessionManager.setSplitTab(tab) },
+                            onSplitTab: { direction, placeFirst in
+                                if placeFirst {
+                                    // This tab goes to primary (left/top), current active becomes secondary
+                                    let oldActiveID = sessionManager.activeTabID
+                                    sessionManager.activeTabID = tab.id
+                                    sessionManager.splitDirection = direction
+                                    sessionManager.splitTabID = oldActiveID
+                                } else {
+                                    sessionManager.setSplitTab(tab, direction: direction)
+                                }
+                            },
+                            onSplitFocusedPane: { direction, placeFirst in
+                                if let activeTab = sessionManager.activeTab {
+                                    activeTab.splitPane(
+                                        activeTab.focusedPaneID,
+                                        direction: direction,
+                                        with: activeTab.server,
+                                        placeNewFirst: placeFirst
+                                    )
+                                }
+                            },
                             onCloseSplit: { sessionManager.closeSplit() },
                             onRenameStart: {
                                 renamingTabID = tab.id
@@ -45,6 +70,11 @@ struct TabBarView: View {
                             onRenameCancel: { renamingTabID = nil },
                             onResetTitle: { sessionManager.resetTabTitle(tab) }
                         )
+                        .onDrop(of: [tabUTType], delegate: TabReorderDropDelegate(
+                            targetTab: tab,
+                            sessionManager: sessionManager,
+                            dragOverTabID: $dragOverTabID
+                        ))
                     }
                 }
                 .padding(.horizontal, 4)
@@ -124,12 +154,13 @@ private struct SplitDropZone: View {
                 )
         )
         .animation(.easeInOut(duration: 0.12), value: isTargeted)
-        .onDrop(of: [.text, .plainText], isTargeted: $isTargeted) { providers in
+        .onDrop(of: [tabUTType], isTargeted: $isTargeted) { providers in
             guard let provider = providers.first else { return false }
-            _ = provider.loadObject(ofClass: NSString.self) { item, _ in
-                guard let str = item as? String,
-                      str.hasPrefix("TABSPLIT:"),
-                      let uuid = UUID(uuidString: String(str.dropFirst(9))),
+            provider.loadDataRepresentation(forTypeIdentifier: tabUTType.identifier) { data, _ in
+                guard let data,
+                      let payload = String(data: data, encoding: .utf8),
+                      payload.hasPrefix("TAB:"),
+                      let uuid = UUID(uuidString: String(payload.dropFirst(4))),
                       let tab = sessionManager.tabs.first(where: { $0.id == uuid })
                 else { return }
                 DispatchQueue.main.async {
@@ -153,11 +184,15 @@ struct TabItemView: View {
     let isBroadcastTarget: Bool
     let isBroadcastMode: Bool
     let isRenaming: Bool
+    var isDragOver: Bool = false
     @Binding var renameText: String
     var onActivate: () -> Void
     var onClose: () -> Void
     var onDuplicate: () -> Void
-    var onSplitPane: () -> Void
+    /// Cross-tab split: direction + placeFirst (true = this tab goes left/top)
+    var onSplitTab: ((SplitDirection, Bool) -> Void)? = nil
+    /// Pane split within active tab: direction + placeFirst
+    var onSplitFocusedPane: ((SplitDirection, Bool) -> Void)? = nil
     var onCloseSplit: () -> Void
     var onRenameStart: () -> Void
     var onRenameCommit: () -> Void
@@ -166,33 +201,32 @@ struct TabItemView: View {
 
     @FocusState private var renameFocused: Bool
     @State private var isHovered: Bool = false
-    private var splitDragPayload: NSItemProvider {
-        // "TABSPLIT:" prefix distinguishes tab drags from pane-swap drags.
-        NSItemProvider(object: "TABSPLIT:\(tab.id.uuidString)" as NSString)
+
+    private var tabDragPayload: NSItemProvider {
+        let provider = NSItemProvider()
+        let payload = "TAB:\(tab.id.uuidString)"
+        provider.registerDataRepresentation(
+            forTypeIdentifier: tabUTType.identifier,
+            visibility: .ownProcess
+        ) { completion in
+            completion(payload.data(using: .utf8), nil)
+            return nil
+        }
+        return provider
     }
 
     var body: some View {
         HStack(spacing: 4) {
-            // ── Drag handle ─────────────────────────────────────────────────────
-            // Isolating drag to its own subview prevents conflict with onTapGesture.
-            // On macOS, placing .onDrag on the full tab row competes with tap detection;
-            // a dedicated handle removes this ambiguity entirely.
             Image(systemName: "line.3.horizontal")
                 .font(.system(size: 9))
                 .foregroundColor(isHovered ? .secondary.opacity(0.55) : .clear)
                 .frame(width: 12)
-                .onDrag {
-                    splitDragPayload
-                }
                 .cursor(.openHand)
-                .help("拖到右侧分屏区进行分屏")
 
-            // ── Status dot ──────────────────────────────────────────────────────
             Circle()
                 .fill(statusColor)
                 .frame(width: 7, height: 7)
 
-            // ── Badges ──────────────────────────────────────────────────────────
             if isSplitPane {
                 Image(systemName: "rectangle.righthalf.inset.filled")
                     .font(.system(size: 9))
@@ -205,7 +239,6 @@ struct TabItemView: View {
                     .foregroundColor(.orange)
             }
 
-            // ── Title / rename field ─────────────────────────────────────────────
             if isRenaming {
                 TextField("", text: $renameText)
                     .textFieldStyle(.plain)
@@ -222,7 +255,6 @@ struct TabItemView: View {
                     .frame(maxWidth: 140)
             }
 
-            // ── Close button ─────────────────────────────────────────────────────
             if (isHovered || isActive) && !isRenaming {
                 Button(action: onClose) {
                     Image(systemName: "xmark")
@@ -237,37 +269,72 @@ struct TabItemView: View {
         .padding(.vertical, 6)
         .background(
             RoundedRectangle(cornerRadius: 6)
-                .fill(isActive
-                      ? Color.accentColor.opacity(0.15)
-                      : (isSplitPane ? Color.purple.opacity(0.08)
-                         : (isHovered ? Color.secondary.opacity(0.1) : Color.clear)))
+                .fill(tabBackground)
         )
         .overlay(
             RoundedRectangle(cornerRadius: 6)
-                .strokeBorder(
-                    isBroadcastMode && isBroadcastTarget
-                        ? Color.orange
-                        : (isSplitPane
-                           ? Color.purple.opacity(0.45)
-                           : (isActive ? Color.accentColor.opacity(0.4) : Color.clear)),
-                    lineWidth: (isBroadcastMode && isBroadcastTarget) || isSplitPane ? 1.5 : 1
-                )
+                .strokeBorder(tabBorderColor, lineWidth: tabBorderWidth)
         )
         .onHover { isHovered = $0 }
         .onTapGesture { onActivate() }
-        .onDrag {
-            splitDragPayload
-        }
+        .onDrag { tabDragPayload }
         .contextMenu {
-            // Show split option on any non-active, non-split tab
             if !isActive {
                 if isSplitPane {
                     Button("关闭分屏（保留两个标签）") { onCloseSplit() }
                 } else {
-                    Button("向右分屏显示此标签") { onSplitPane() }
+                    Menu("分屏显示此标签") {
+                        Button {
+                            onSplitTab?(.horizontal, true)
+                        } label: {
+                            Label("向左分屏", systemImage: "rectangle.lefthalf.inset.filled")
+                        }
+                        Button {
+                            onSplitTab?(.horizontal, false)
+                        } label: {
+                            Label("向右分屏", systemImage: "rectangle.righthalf.inset.filled")
+                        }
+                        Button {
+                            onSplitTab?(.vertical, true)
+                        } label: {
+                            Label("向上分屏", systemImage: "rectangle.tophalf.inset.filled")
+                        }
+                        Button {
+                            onSplitTab?(.vertical, false)
+                        } label: {
+                            Label("向下分屏", systemImage: "rectangle.bottomhalf.inset.filled")
+                        }
+                    }
                 }
                 Divider()
             }
+
+            if isActive {
+                Menu("拆分当前窗格") {
+                    Button {
+                        onSplitFocusedPane?(.horizontal, true)
+                    } label: {
+                        Label("向左拆分", systemImage: "rectangle.lefthalf.inset.filled")
+                    }
+                    Button {
+                        onSplitFocusedPane?(.horizontal, false)
+                    } label: {
+                        Label("向右拆分", systemImage: "rectangle.righthalf.inset.filled")
+                    }
+                    Button {
+                        onSplitFocusedPane?(.vertical, true)
+                    } label: {
+                        Label("向上拆分", systemImage: "rectangle.tophalf.inset.filled")
+                    }
+                    Button {
+                        onSplitFocusedPane?(.vertical, false)
+                    } label: {
+                        Label("向下拆分", systemImage: "rectangle.bottomhalf.inset.filled")
+                    }
+                }
+                Divider()
+            }
+
             Button("复制标签页（新连接）") { onDuplicate() }
             Button("重命名") { onRenameStart() }
             Button("恢复自动标题") { onResetTitle() }
@@ -276,7 +343,82 @@ struct TabItemView: View {
         }
     }
 
+    private var tabBackground: Color {
+        if isDragOver { return Color.accentColor.opacity(0.2) }
+        if isActive { return Color.accentColor.opacity(0.15) }
+        if isSplitPane { return Color.purple.opacity(0.08) }
+        if isHovered { return Color.secondary.opacity(0.1) }
+        return Color.clear
+    }
+
+    private var tabBorderColor: Color {
+        if isDragOver { return .accentColor }
+        if isBroadcastMode && isBroadcastTarget { return .orange }
+        if isSplitPane { return Color.purple.opacity(0.45) }
+        if isActive { return Color.accentColor.opacity(0.4) }
+        return .clear
+    }
+
+    private var tabBorderWidth: CGFloat {
+        if isDragOver { return 2 }
+        if (isBroadcastMode && isBroadcastTarget) || isSplitPane { return 1.5 }
+        return 1
+    }
+
     var statusColor: Color {
         tab.isConnected ? .green : .gray
+    }
+}
+
+// MARK: - Tab Reorder Drop Delegate
+
+/// Enables drag-to-reorder tabs by dropping one tab onto another's position.
+private struct TabReorderDropDelegate: DropDelegate {
+    let targetTab: SessionTab
+    let sessionManager: SessionManager
+    @Binding var dragOverTabID: UUID?
+
+    func validateDrop(info: DropInfo) -> Bool {
+        info.hasItemsConforming(to: [tabUTType])
+    }
+
+    func dropEntered(info: DropInfo) {
+        dragOverTabID = targetTab.id
+    }
+
+    func dropUpdated(info: DropInfo) -> DropProposal? {
+        dragOverTabID = targetTab.id
+        return DropProposal(operation: .move)
+    }
+
+    func dropExited(info: DropInfo) {
+        if dragOverTabID == targetTab.id {
+            dragOverTabID = nil
+        }
+    }
+
+    func performDrop(info: DropInfo) -> Bool {
+        dragOverTabID = nil
+        let providers = info.itemProviders(for: [tabUTType])
+        guard let provider = providers.first else { return false }
+
+        provider.loadDataRepresentation(forTypeIdentifier: tabUTType.identifier) { data, _ in
+            guard let data,
+                  let payload = String(data: data, encoding: .utf8),
+                  payload.hasPrefix("TAB:"),
+                  let sourceID = UUID(uuidString: String(payload.dropFirst(4))) else { return }
+            DispatchQueue.main.async {
+                guard let sourceIndex = sessionManager.tabs.firstIndex(where: { $0.id == sourceID }),
+                      let targetIndex = sessionManager.tabs.firstIndex(where: { $0.id == targetTab.id }),
+                      sourceIndex != targetIndex else { return }
+                withAnimation(.easeInOut(duration: 0.2)) {
+                    sessionManager.tabs.move(
+                        fromOffsets: IndexSet(integer: sourceIndex),
+                        toOffset: targetIndex > sourceIndex ? targetIndex + 1 : targetIndex
+                    )
+                }
+            }
+        }
+        return true
     }
 }

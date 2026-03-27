@@ -13,10 +13,22 @@ final class ZModemTerminalView: LocalProcessTerminalView {
     private let engine   = ZModemEngine()
     private let progress = ZModemProgressWindowController.shared
 
+    // Pane/tab drag-and-drop callbacks (set by TerminalPaneView)
+    var currentTabID: UUID?
+    var targetPaneID: UUID?
+    var onHighlightChange: ((PaneDropPosition?) -> Void)?
+    var onFileHighlightChange: ((Bool) -> Void)?
+    var onMergeTab: ((UUID, PaneDropPosition) -> Void)?
+    var onMovePane: ((UUID, PaneDropPosition) -> Void)?
+    var onPaneFileDrop: (([URL]) -> Void)?
+
+    private static let panePBType = NSPasteboard.PasteboardType("com.zpfssh.pane-id")
+    private static let tabPBType  = NSPasteboard.PasteboardType("com.zpfssh.tab-id")
+
     override init(frame: NSRect) {
         super.init(frame: frame)
         setupEngine()
-        registerForDraggedTypes([.fileURL])
+        registerForDraggedTypes([Self.panePBType, Self.tabPBType, .fileURL])
     }
 
     required init?(coder: NSCoder) { fatalError("init(coder:) not implemented") }
@@ -164,9 +176,20 @@ final class ZModemTerminalView: LocalProcessTerminalView {
         }
     }
 
-    // MARK: - Drag and drop
+    // MARK: - Drag and drop (pane/tab composition + ZModem file upload)
 
     override func draggingEntered(_ sender: NSDraggingInfo) -> NSDragOperation {
+        let types = sender.draggingPasteboard.types ?? []
+        if types.contains(Self.panePBType) || types.contains(Self.tabPBType) {
+            updatePaneHighlight(sender)
+            return .move
+        }
+        // Check for SFTP file drop callback first; fall back to ZModem
+        if types.contains(.fileURL), onPaneFileDrop != nil {
+            onHighlightChange?(nil)
+            onFileHighlightChange?(true)
+            return .copy
+        }
         let pb = sender.draggingPasteboard
         let ok = pb.canReadObject(forClasses: [NSURL.self],
                                   options: [.urlReadingFileURLsOnly: true])
@@ -174,31 +197,108 @@ final class ZModemTerminalView: LocalProcessTerminalView {
     }
 
     override func draggingUpdated(_ sender: NSDraggingInfo) -> NSDragOperation {
-        .copy
+        let types = sender.draggingPasteboard.types ?? []
+        if types.contains(Self.panePBType) || types.contains(Self.tabPBType) {
+            updatePaneHighlight(sender)
+            return detectPanePosition(sender) == .forbidden ? NSDragOperation() : .move
+        }
+        if types.contains(.fileURL), onPaneFileDrop != nil {
+            onHighlightChange?(nil)
+            onFileHighlightChange?(true)
+            return .copy
+        }
+        return .copy
+    }
+
+    override func draggingExited(_ sender: NSDraggingInfo?) {
+        onHighlightChange?(nil)
+        onFileHighlightChange?(false)
     }
 
     override func performDragOperation(_ sender: NSDraggingInfo) -> Bool {
         let pb = sender.draggingPasteboard
-        guard let raw = pb.readObjects(
-            forClasses: [NSURL.self],
-            options: [.urlReadingFileURLsOnly: true]
-        ) as? [URL], !raw.isEmpty else { return false }
+        let types = pb.types ?? []
 
-        let files = loadFiles(from: raw)
-        guard !files.isEmpty else { return false }
+        onHighlightChange?(nil)
+        onFileHighlightChange?(false)
 
-        engine.queueFilesForUpload(files)
+        // Pane rearrangement
+        if let data = pb.data(forType: Self.panePBType),
+           let payload = String(data: data, encoding: .utf8),
+           payload.hasPrefix("PANE:"),
+           let sourcePaneID = UUID(uuidString: String(payload.dropFirst(5))),
+           sourcePaneID != targetPaneID {
+            let pos = detectPanePosition(sender)
+            guard pos != .forbidden else { return false }
+            onMovePane?(sourcePaneID, pos)
+            return true
+        }
 
-        // Trigger rz on remote — the engine will respond to ZRINIT automatically
-        process.send(data: ArraySlice(Array("rz\n".utf8)))
+        // Tab merge / replace
+        if let data = pb.data(forType: Self.tabPBType),
+           let payload = String(data: data, encoding: .utf8),
+           payload.hasPrefix("TAB:"),
+           let sourceTabID = UUID(uuidString: String(payload.dropFirst(4))),
+           sourceTabID != currentTabID {
+            let pos = detectPanePosition(sender)
+            guard pos != .forbidden else { return false }
+            onMergeTab?(sourceTabID, pos)
+            return true
+        }
 
-        ZModemProgressWindowController.shared.beginTransfer(
-            uploading: true,
-            fileName: files.first?.name ?? "",
-            totalBytes: files.reduce(0) { $0 + $1.data.count }
-        )
+        // File drop — use SFTP callback if set, otherwise ZModem
+        if types.contains(.fileURL) {
+            guard let raw = pb.readObjects(
+                forClasses: [NSURL.self],
+                options: [.urlReadingFileURLsOnly: true]
+            ) as? [URL], !raw.isEmpty else { return false }
 
-        return true
+            if let fileDrop = onPaneFileDrop {
+                fileDrop(raw)
+                return true
+            }
+
+            // ZModem upload path
+            let files = loadFiles(from: raw)
+            guard !files.isEmpty else { return false }
+
+            engine.queueFilesForUpload(files)
+            process.send(data: ArraySlice(Array("rz\n".utf8)))
+
+            ZModemProgressWindowController.shared.beginTransfer(
+                uploading: true,
+                fileName: files.first?.name ?? "",
+                totalBytes: files.reduce(0) { $0 + $1.data.count }
+            )
+            return true
+        }
+
+        return false
+    }
+
+    // MARK: - Pane drop position helpers
+
+    private func updatePaneHighlight(_ sender: NSDraggingInfo) {
+        onHighlightChange?(detectPanePosition(sender))
+        onFileHighlightChange?(false)
+    }
+
+    private func detectPanePosition(_ sender: NSDraggingInfo) -> PaneDropPosition {
+        let loc = convert(sender.draggingLocation, from: nil)
+        let w = bounds.width
+        let h = bounds.height
+        guard w > 0, h > 0 else { return .center }
+        let x = loc.x / w
+        let y = 1.0 - loc.y / h  // flip Y: AppKit is bottom-left origin
+        let edge: CGFloat = 0.22
+
+        let isPaneDrag = sender.draggingPasteboard.types?.contains(Self.panePBType) == true
+
+        if x < edge { return .left }
+        if x > 1 - edge { return .right }
+        if y < edge { return .top }
+        if y > 1 - edge { return .bottom }
+        return isPaneDrag ? .forbidden : .center
     }
 
     // MARK: - Helpers

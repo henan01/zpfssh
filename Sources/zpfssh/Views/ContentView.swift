@@ -54,6 +54,7 @@ struct ContentView: View {
                                     let visible  = isActive || isSplit
                                     TerminalContainerView(
                                         tab: tab,
+                                        sessionManager: sessionManager,
                                         settings: settings,
                                         searchText: searchText,
                                         searchActive: searchActive && isActive,
@@ -160,16 +161,16 @@ struct ContentView: View {
             // in the navigation area — no need to add a second one manually.
             ToolbarItemGroup(placement: .automatic) {
                 if sessionManager.activeTab != nil {
-                    Button(action: splitWithExistingTab) {
+                    Button(action: splitHorizontal) {
                         Image(systemName: "rectangle.split.2x1")
                     }
-                    .help("与相邻标签分屏（保留会话）(⌘D)")
+                    .help("当前工作区左右拆分 (⌘D)")
                     .keyboardShortcut("d", modifiers: .command)
 
                     Button(action: splitVertical) {
                         Image(systemName: "rectangle.split.1x2")
                     }
-                    .help("与相邻标签上下分屏（保留会话）(⌘⇧D)")
+                    .help("当前工作区上下拆分 (⌘⇧D)")
                     .keyboardShortcut("d", modifiers: [.command, .shift])
 
                     Button(action: { sessionManager.closeFocusedPane() }) {
@@ -278,16 +279,12 @@ struct ContentView: View {
 
     // MARK: - Actions
 
-    private func splitWithExistingTab() {
-        _ = sessionManager.splitWithNeighborTab(direction: .horizontal)
-    }
-
     private func splitVertical() {
-        _ = sessionManager.splitWithNeighborTab(direction: .vertical)
+        sessionManager.activeTab?.splitFocused(direction: .vertical)
     }
 
     private func splitHorizontal() {
-        splitWithExistingTab()
+        sessionManager.activeTab?.splitFocused(direction: .horizontal)
     }
 
     private func toggleSearch() {

@@ -2,15 +2,13 @@ import SwiftUI
 import AppKit
 import UniformTypeIdentifiers
 
-private let minPaneSize: CGFloat = 160   // minimum pane dimension
+private let minPaneSize: CGFloat = 160
 
-/// UTType used to transfer pane IDs during drag-to-rearrange
-private let paneUTType = UTType.plainText
+private let paneUTType = UTType(exportedAs: "com.zpfssh.pane-id")
 
 struct TerminalContainerView: View {
     @ObservedObject var tab: SessionTab
-    // NOTE: settings is observed so theme/font changes propagate; sessionManager is NOT
-    // observed here to avoid re-rendering all terminal views on every tab switch.
+    @ObservedObject var sessionManager: SessionManager
     @ObservedObject var settings: AppSettings
     var searchText: String = ""
     var searchActive: Bool = false
@@ -26,7 +24,6 @@ struct TerminalContainerView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    // Recursive layout rendering — AnyView avoids opaque-return recursion
     func paneView(for layout: PaneLayout) -> AnyView {
         switch layout {
         case .leaf(let id):
@@ -44,6 +41,25 @@ struct TerminalContainerView: View {
                     searchActive: searchActive,
                     onFocus: { tab.focusedPaneID = id },
                     onClose: { tab.closePane(id) },
+                    onMergeTab: { sourceTabID, position in
+                        if position == .center {
+                            _ = sessionManager.replaceTabInPane(
+                                sourceTabID: sourceTabID,
+                                targetTabID: tab.id,
+                                targetPaneID: id
+                            )
+                        } else {
+                            _ = sessionManager.mergeTabIntoPane(
+                                sourceTabID: sourceTabID,
+                                targetTabID: tab.id,
+                                targetPaneID: id,
+                                position: position
+                            )
+                        }
+                    },
+                    onMovePane: { sourcePaneID, position in
+                        _ = tab.movePane(sourcePaneID, to: id, position: position)
+                    },
                     onFileDrop: { [dropSFTP] urls in
                         dropSFTP.connectForUpload(to: paneServer, password: panePassword)
                         for url in urls {
@@ -54,7 +70,7 @@ struct TerminalContainerView: View {
                         }
                     }
                 )
-                .id(id)  // stable identity — prevents SSH process reuse across panes
+                .id(id)
             )
 
         case .split(let splitID, .horizontal, let ratio, let first, let second):
@@ -71,7 +87,6 @@ struct TerminalContainerView: View {
                     HStack(spacing: 0) {
                         paneView(for: first)
                             .frame(width: leftW)
-                        // Draggable divider — drag to resize, right-click to flip direction
                         Rectangle()
                             .fill(Color(NSColor.separatorColor))
                             .frame(width: divW)
@@ -188,7 +203,7 @@ struct TerminalContainerView: View {
     }
 }
 
-// MARK: - Pane Container (with header bar when split)
+// MARK: - Pane Container (with AppKit drop handling)
 
 struct PaneContainer: View {
     let server: Server
@@ -200,16 +215,17 @@ struct PaneContainer: View {
     var searchActive: Bool = false
     var onFocus: () -> Void = {}
     var onClose: () -> Void = {}
+    var onMergeTab: ((UUID, PaneDropPosition) -> Void)? = nil
+    var onMovePane: ((UUID, PaneDropPosition) -> Void)? = nil
     var onFileDrop: (([URL]) -> Void)? = nil
 
-    @State private var isDropTargeted = false
-    @State private var isPaneSwapTarget = false
+    @State private var dropHighlight: PaneDropPosition? = nil
+    @State private var isFileDropTargeted: Bool = false
 
     var isSplit: Bool { tab.layout.allLeafIDs.count > 1 }
 
     var body: some View {
         VStack(spacing: 0) {
-            // Per-pane header — only when in split mode
             if isSplit {
                 PaneHeaderBar(
                     server: server,
@@ -220,88 +236,118 @@ struct PaneContainer: View {
                 )
             }
 
-            TerminalPaneView(
-                server: server,
-                paneID: paneID,
-                tab: tab,
-                settings: settings,
-                searchText: searchText,
-                searchActive: searchActive
-            )
-            .overlay(dropOverlay)
-            .overlay(paneSwapOverlay)
-            .overlay(
-                RoundedRectangle(cornerRadius: 0)
-                    .strokeBorder(isFocused ? Color.accentColor.opacity(0.6) : Color.clear,
-                                  lineWidth: 1.5)
-            )
-            .contentShape(Rectangle())
-            .onTapGesture { onFocus() }
-            .onDrop(of: [UTType.fileURL], isTargeted: $isDropTargeted) { providers in
-                Task {
-                    var urls: [URL] = []
-                    for provider in providers {
-                        if let url: URL = await withCheckedContinuation({ cont in
-                            provider.loadItem(
-                                forTypeIdentifier: UTType.fileURL.identifier,
-                                options: nil
-                            ) { item, _ in
-                                if let data = item as? Data,
-                                   let u = URL(dataRepresentation: data, relativeTo: nil) {
-                                    cont.resume(returning: u)
-                                } else {
-                                    cont.resume(returning: nil)
-                                }
+            GeometryReader { geo in
+                ZStack {
+                    TerminalPaneView(
+                        server: server,
+                        paneID: paneID,
+                        tab: tab,
+                        settings: settings,
+                        searchText: searchText,
+                        searchActive: searchActive,
+                        onFocus: onFocus,
+                        onHighlightChange: { dropHighlight = $0 },
+                        onFileHighlightChange: { isFileDropTargeted = $0 },
+                        onMergeTab: { id, pos in onMergeTab?(id, pos) },
+                        onMovePane: { id, pos in onMovePane?(id, pos) },
+                        onFileDrop: { urls in onFileDrop?(urls) }
+                    )
+
+                    if let pos = dropHighlight {
+                        DropPositionHighlight(position: pos, size: geo.size)
+                            .allowsHitTesting(false)
+                    }
+
+                    if isFileDropTargeted {
+                        ZStack {
+                            Color.accentColor.opacity(0.12)
+                            VStack(spacing: 8) {
+                                Image(systemName: "arrow.up.doc.on.clipboard")
+                                    .font(.system(size: 28))
+                                Text("松开以上传到 ~/")
+                                    .font(.callout)
                             }
-                        }) {
-                            urls.append(url)
+                            .foregroundColor(.accentColor)
                         }
+                        .allowsHitTesting(false)
                     }
-                    await MainActor.run { onFileDrop?(urls) }
+
+                    RoundedRectangle(cornerRadius: 0)
+                        .strokeBorder(isFocused ? Color.accentColor.opacity(0.6) : Color.clear,
+                                      lineWidth: 1.5)
+                        .allowsHitTesting(false)
                 }
-                return true
-            }
-            // Accept a dragged pane header → swap the two panes in the layout
-            .onDrop(of: [paneUTType], isTargeted: $isPaneSwapTarget) { providers in
-                guard let provider = providers.first else { return false }
-                _ = provider.loadObject(ofClass: NSString.self) { item, _ in
-                    guard let str = item as? String,
-                          let sourceID = UUID(uuidString: str),
-                          sourceID != paneID else { return }
-                    DispatchQueue.main.async {
-                        tab.swapPanes(sourceID, paneID)
-                    }
-                }
-                return true
             }
         }
     }
+}
 
-    @ViewBuilder
-    private var dropOverlay: some View {
-        if isDropTargeted {
-            ZStack {
-                Color.accentColor.opacity(0.12)
-                VStack(spacing: 8) {
-                    Image(systemName: "arrow.up.doc.on.clipboard")
-                        .font(.system(size: 28))
-                    Text("松开以上传到 ~/")
-                        .font(.callout)
-                }
-                .foregroundColor(.accentColor)
+// MARK: - Drop Position Highlight
+
+/// Visual feedback showing where a dragged item will be placed.
+/// Half the pane highlights in the drag direction; center highlights the whole pane.
+private struct DropPositionHighlight: View {
+    let position: PaneDropPosition
+    let size: CGSize
+
+    var body: some View {
+        ZStack(alignment: alignment) {
+            Color.clear
+            if position == .forbidden {
+                forbiddenOverlay
+            } else {
+                highlightRect
+                    .frame(
+                        width: isHorizontalEdge ? size.width * 0.5 : nil,
+                        height: isVerticalEdge ? size.height * 0.5 : nil
+                    )
             }
-            .allowsHitTesting(false)
+        }
+        .animation(.easeInOut(duration: 0.12), value: position)
+    }
+
+    private var alignment: Alignment {
+        switch position {
+        case .left: return .leading
+        case .right: return .trailing
+        case .top: return .top
+        case .bottom: return .bottom
+        case .center, .forbidden: return .center
         }
     }
 
-    @ViewBuilder
-    private var paneSwapOverlay: some View {
-        if isPaneSwapTarget {
-            RoundedRectangle(cornerRadius: 4)
-                .strokeBorder(Color.accentColor, lineWidth: 2)
-                .background(Color.accentColor.opacity(0.08))
-                .allowsHitTesting(false)
+    private var isHorizontalEdge: Bool {
+        position == .left || position == .right
+    }
+
+    private var isVerticalEdge: Bool {
+        position == .top || position == .bottom
+    }
+
+    private var highlightRect: some View {
+        RoundedRectangle(cornerRadius: 4)
+            .fill(accentFill)
+            .overlay(
+                RoundedRectangle(cornerRadius: 4)
+                    .strokeBorder(accentBorder, lineWidth: 2)
+            )
+    }
+
+    private var forbiddenOverlay: some View {
+        ZStack {
+            Color.red.opacity(0.08)
+            Image(systemName: "nosign")
+                .font(.system(size: 36, weight: .light))
+                .foregroundColor(.red.opacity(0.5))
         }
+    }
+
+    private var accentFill: Color {
+        position == .center ? Color.orange.opacity(0.15) : Color.accentColor.opacity(0.13)
+    }
+
+    private var accentBorder: Color {
+        position == .center ? .orange : .accentColor
     }
 }
 
@@ -316,18 +362,32 @@ struct PaneHeaderBar: View {
 
     var pane: PaneSession? { tab.paneSessions[paneID] }
 
+    private var otherPaneIDs: [UUID] {
+        tab.layout.allLeafIDs.filter { $0 != paneID }
+    }
+
+    private var paneDragPayload: NSItemProvider {
+        let provider = NSItemProvider()
+        let payload = "PANE:\(paneID.uuidString)"
+        provider.registerDataRepresentation(
+            forTypeIdentifier: paneUTType.identifier,
+            visibility: .ownProcess
+        ) { completion in
+            completion(payload.data(using: .utf8), nil)
+            return nil
+        }
+        return provider
+    }
+
     var body: some View {
         HStack(spacing: 6) {
-            // Drag handle — drag this header to rearrange panes
             Image(systemName: "line.3.horizontal")
                 .font(.system(size: 10))
                 .foregroundColor(.secondary.opacity(0.6))
                 .padding(.leading, 2)
-                .onDrag {
-                    NSItemProvider(object: paneID.uuidString as NSString)
-                }
+                .onDrag { paneDragPayload }
                 .cursor(.openHand)
-                .help("拖动以交换面板位置")
+                .help("拖动到其他面板边缘以重新组合")
 
             Circle()
                 .fill(pane?.isConnected == true ? Color.green : Color.gray)
@@ -354,6 +414,49 @@ struct PaneHeaderBar: View {
                     ? Color.accentColor.opacity(0.08)
                     : Color(NSColor.windowBackgroundColor).opacity(0.7))
         .overlay(Divider(), alignment: .bottom)
+        .onDrag { paneDragPayload }
+        .contextMenu {
+            Button {
+                tab.splitPane(paneID, direction: .horizontal, with: server, placeNewFirst: true)
+            } label: {
+                Label("向左拆分", systemImage: "rectangle.lefthalf.inset.filled")
+            }
+            Button {
+                tab.splitPane(paneID, direction: .horizontal, with: server)
+            } label: {
+                Label("向右拆分", systemImage: "rectangle.righthalf.inset.filled")
+            }
+            Button {
+                tab.splitPane(paneID, direction: .vertical, with: server, placeNewFirst: true)
+            } label: {
+                Label("向上拆分", systemImage: "rectangle.tophalf.inset.filled")
+            }
+            Button {
+                tab.splitPane(paneID, direction: .vertical, with: server)
+            } label: {
+                Label("向下拆分", systemImage: "rectangle.bottomhalf.inset.filled")
+            }
+
+            if !otherPaneIDs.isEmpty {
+                Divider()
+                Menu("交换窗格位置") {
+                    ForEach(otherPaneIDs, id: \.self) { otherID in
+                        Button {
+                            tab.swapPanes(paneID, otherID)
+                        } label: {
+                            let otherPane = tab.paneSessions[otherID]
+                            let title = otherPane?.hostname.isEmpty == false
+                                ? otherPane!.hostname
+                                : otherPane?.server.displayTitle ?? "窗格"
+                            Text(title)
+                        }
+                    }
+                }
+            }
+
+            Divider()
+            Button("关闭当前窗格", role: .destructive) { onClose() }
+        }
     }
 }
 

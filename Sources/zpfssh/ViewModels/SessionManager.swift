@@ -111,6 +111,77 @@ class SessionManager: ObservableObject {
         tabs.move(fromOffsets: source, toOffset: destination)
     }
 
+    /// Merge a tab into a specific pane of another tab by splitting that pane.
+    /// This enables free workspace composition from multiple tab sessions.
+    @discardableResult
+    func mergeTabIntoPane(
+        sourceTabID: UUID,
+        targetTabID: UUID,
+        targetPaneID: UUID,
+        position: PaneDropPosition = .center
+    ) -> Bool {
+        guard sourceTabID != targetTabID,
+              let sourceIndex = tabs.firstIndex(where: { $0.id == sourceTabID }),
+              let targetIndex = tabs.firstIndex(where: { $0.id == targetTabID }) else {
+            return false
+        }
+
+        let sourceTab = tabs[sourceIndex]
+        let targetTab = tabs[targetIndex]
+
+        guard targetTab.splitPane(
+            targetPaneID,
+            direction: position.splitDirection,
+            with: sourceTab.server,
+            placeNewFirst: position.placeNewFirst
+        ) != nil else {
+            return false
+        }
+
+        if splitTabID == sourceTabID {
+            splitTabID = nil
+        }
+        broadcastTargetIDs.remove(sourceTabID)
+        tabs.removeAll { $0.id == sourceTabID }
+        activeTabID = targetTabID
+        return true
+    }
+
+    /// Replace a pane's session with a source tab's server (center drop).
+    /// The displaced pane content becomes a new standalone tab in the tab bar.
+    @discardableResult
+    func replaceTabInPane(
+        sourceTabID: UUID,
+        targetTabID: UUID,
+        targetPaneID: UUID
+    ) -> Bool {
+        guard sourceTabID != targetTabID,
+              let sourceTab = tabs.first(where: { $0.id == sourceTabID }),
+              let targetTab = tabs.first(where: { $0.id == targetTabID }),
+              let targetPane = targetTab.paneSessions[targetPaneID] else {
+            return false
+        }
+
+        // Create a new standalone tab for the displaced pane content
+        let displacedTab = SessionTab(server: targetPane.server)
+        if let idx = tabs.firstIndex(where: { $0.id == sourceTabID }) {
+            tabs.insert(displacedTab, at: idx)
+        } else {
+            tabs.append(displacedTab)
+        }
+
+        // Replace the target pane's session with source tab's server
+        targetTab.paneSessions[targetPaneID] = PaneSession(id: targetPaneID, server: sourceTab.server)
+        targetTab.focusedPaneID = targetPaneID
+
+        // Remove source tab
+        if splitTabID == sourceTabID { splitTabID = nil }
+        broadcastTargetIDs.remove(sourceTabID)
+        tabs.removeAll { $0.id == sourceTabID }
+        activeTabID = targetTabID
+        return true
+    }
+
     // MARK: – Broadcast
 
     func toggleBroadcastMode() {
