@@ -42,9 +42,16 @@ final class SSHAskPassService: @unchecked Sendable {
     {
         guard server.authType == .password,
               let password = CredentialService.shared.load(for: server.id),
-              !password.isEmpty else { return nil }
+              !password.isEmpty else {
+            Log.ssh("AskPass: 服务器 \(server.host) 非密码认证或无保存密码，跳过")
+            return nil
+        }
 
-        guard let passTmpURL = writeTempPasswordFile(password) else { return nil }
+        guard let passTmpURL = writeTempPasswordFile(password) else {
+            Log.error("SSH", "AskPass: 写入临时密码文件失败")
+            return nil
+        }
+        Log.ssh("AskPass: 配置密码注入 → \(server.host):\(server.port) tmpFile=\(passTmpURL.lastPathComponent)")
 
         // Disable pubkey auth so SSH doesn't try every key in ~/.ssh/ before
         // reaching the password prompt — avoids exhausting MaxAuthTries.

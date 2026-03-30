@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -79,6 +80,14 @@ struct TabBarView: View {
                 }
                 .padding(.horizontal, 4)
             }
+            .background(
+                Color.clear
+                    .contentShape(Rectangle())
+                    .onTapGesture(count: 2) {
+                        Log.ui("双击 tab bar 空白区域 → 新建连接")
+                        onNewTab()
+                    }
+            )
 
             // ── Split Drop Zone ──────────────────────────────────────────────────
             // This zone lives entirely in SwiftUI (no AppKit view underneath), so
@@ -201,6 +210,8 @@ struct TabItemView: View {
 
     @FocusState private var renameFocused: Bool
     @State private var isHovered: Bool = false
+    /// Single `onTapGesture(count: 1)` avoids double-tap wait; we detect double clicks manually.
+    @State private var firstTapTime: TimeInterval?
 
     private var tabDragPayload: NSItemProvider {
         let provider = NSItemProvider()
@@ -276,7 +287,27 @@ struct TabItemView: View {
                 .strokeBorder(tabBorderColor, lineWidth: tabBorderWidth)
         )
         .onHover { isHovered = $0 }
-        .onTapGesture { onActivate() }
+        .onTapGesture(count: 1) {
+            let now = ProcessInfo.processInfo.systemUptime
+            let dbl = NSEvent.doubleClickInterval
+            if let t0 = firstTapTime, now - t0 < dbl {
+                firstTapTime = nil
+                onActivate()
+                Log.ui("双击 tab → 复制连接 \(tab.displayTitle)")
+                onDuplicate()
+            } else {
+                firstTapTime = now
+                if !isActive {
+                    onActivate()
+                }
+                let marker = now
+                DispatchQueue.main.asyncAfter(deadline: .now() + dbl) {
+                    if firstTapTime == marker {
+                        firstTapTime = nil
+                    }
+                }
+            }
+        }
         .onDrag { tabDragPayload }
         .contextMenu {
             if !isActive {

@@ -36,12 +36,14 @@ class AppSettings: ObservableObject {
         confirmBroadcast = UserDefaults.standard.object(forKey: "confirmBroadcast") as? Bool ?? true
         scrollbackLines = UserDefaults.standard.integer(forKey: "scrollbackLines").nonZero ?? 10000
         tabTitleTemplate = UserDefaults.standard.string(forKey: "tabTitleTemplate") ?? "{alias}"
+        Log.settings("加载设置: theme=\(appearance.themeId) font=\(appearance.fontName)@\(appearance.fontSize) scrollback=\(scrollbackLines)")
     }
 
     private func save() {
         if let data = try? JSONEncoder().encode(appearance) {
             UserDefaults.standard.set(data, forKey: "appearance")
         }
+        Log.settings("保存外观: theme=\(appearance.themeId) font=\(appearance.fontName)@\(appearance.fontSize)")
     }
 }
 

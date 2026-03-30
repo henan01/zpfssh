@@ -3,7 +3,8 @@
     "allow": [
       "*",
       "Bash(swift build:*)",
-      "Bash(xcodebuild -project ZenSSH.xcodeproj -scheme zpfssh -configuration Debug build)"
+      "Bash(xcodebuild -project ZenSSH.xcodeproj -scheme zpfssh -configuration Debug build)",
+      "Bash(./build.sh)"
     ]
   }
 }

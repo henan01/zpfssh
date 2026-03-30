@@ -72,11 +72,14 @@ final class SFTPService: ObservableObject {
     func connect(to server: Server, password: String?) {
         self.server   = server
         self.password = password
+        Log.sftp("连接 \(server.host):\(server.port) user=\(server.username)")
         Task {
             do {
                 try await establish(to: server, password: password)
+                Log.sftp("SFTP 连接成功 → \(server.host)")
                 listDirectory("/")
             } catch {
+                Log.error("SFTP", "连接失败 \(server.host): \(error.localizedDescription)")
                 self.errorMessage = "连接失败: \(error.localizedDescription)"
             }
         }
@@ -90,6 +93,7 @@ final class SFTPService: ObservableObject {
     }
 
     func listDirectory(_ path: String) {
+        Log.sftp("列目录 \(path)")
         Task {
             self.isLoading    = true
             self.errorMessage = nil
@@ -120,16 +124,19 @@ final class SFTPService: ObservableObject {
                 self.isLoading          = false
                 self.currentRemotePath  = path
                 self.remoteFiles        = files
+                Log.sftp("列目录完成 \(path) → \(files.count) 个文件")
 
             } catch {
                 self.isLoading    = false
                 self.errorMessage = "无法列出目录: \(error.localizedDescription)"
+                Log.error("SFTP", "列目录失败 \(path): \(error.localizedDescription)")
             }
         }
     }
 
     /// Upload a local file to the server with chunked progress reporting.
     func uploadFile(localURL: URL, toRemotePath remotePath: String) {
+        Log.sftp("上传 \(localURL.lastPathComponent) → \(remotePath)")
         var task = TransferTask(localPath: localURL.path,
                                 remotePath: remotePath,
                                 isUpload: true)
@@ -169,17 +176,20 @@ final class SFTPService: ObservableObject {
                 }
                 try await handle.close()
                 self.mutatetask(id: taskID) { $0.isCompleted = true; $0.progress = 1.0 }
+                Log.sftp("上传完成 \(localURL.lastPathComponent) \(totalBytes)B")
 
             } catch {
                 self.mutatetask(id: taskID) {
                     $0.error = error.localizedDescription; $0.isCompleted = true
                 }
+                Log.error("SFTP", "上传失败 \(localURL.lastPathComponent): \(error.localizedDescription)")
             }
         }
     }
 
     /// Download a remote file to a local URL with chunked progress reporting.
     func downloadFile(remotePath: String, toLocalURL localURL: URL) {
+        Log.sftp("下载 \(remotePath) → \(localURL.lastPathComponent)")
         var task = TransferTask(localPath: localURL.path,
                                 remotePath: remotePath,
                                 isUpload: false)
@@ -224,11 +234,13 @@ final class SFTPService: ObservableObject {
                 try await handle.close()
                 try allData.write(to: localURL)
                 self.mutatetask(id: taskID) { $0.isCompleted = true; $0.progress = 1.0 }
+                Log.sftp("下载完成 \(remotePath) \(allData.count)B")
 
             } catch {
                 self.mutatetask(id: taskID) {
                     $0.error = error.localizedDescription; $0.isCompleted = true
                 }
+                Log.error("SFTP", "下载失败 \(remotePath): \(error.localizedDescription)")
             }
         }
     }
@@ -256,11 +268,12 @@ final class SFTPService: ObservableObject {
         var tunnelProcess: Process? = nil
 
         if !server.jumpHost.isEmpty {
+            Log.sftp("建立跳板机隧道 jump=\(server.jumpHost) → \(server.host):\(server.port)")
             let (proc, localPort) = try startSSHTunnel(to: server)
             tunnelProcess = proc
             connectHost = "127.0.0.1"
             connectPort  = localPort
-            // Give the tunnel ~2 s to establish before connecting
+            Log.sftp("隧道就绪 localPort=\(localPort), 等待 2s")
             try await Task.sleep(nanoseconds: 2_000_000_000)
         }
 

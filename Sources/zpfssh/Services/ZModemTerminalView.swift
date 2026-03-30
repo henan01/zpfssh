@@ -49,10 +49,12 @@ final class ZModemTerminalView: LocalProcessTerminalView {
         // Write ZMODEM protocol bytes to SSH stdin
         engine.onSend = { [weak self] bytes in
             self?.process.send(data: ArraySlice(bytes))
+            Log.zmodem("发送 \(bytes.count) 字节")
         }
 
         // File fully received → save to ~/Downloads (don't hide panel here; onTransferDone does it)
         engine.onFileReceived = { [weak self] name, data in
+            Log.zmodem("接收完成 \(name) \(data.count)B")
             DispatchQueue.main.async {
                 self?.saveDownload(name: name, data: data)
             }
@@ -72,6 +74,7 @@ final class ZModemTerminalView: LocalProcessTerminalView {
         // Status text — show in terminal AND update panel label.
         // `show()` / `beginTransfer()` is called ONCE per transfer start, not on every status line.
         engine.onStatusChange = { [weak self] msg in
+            Log.zmodem("状态: \(msg)")
             DispatchQueue.main.async { [weak self] in
                 self?.feed(text: "\r\n\u{1B}[32m[\(msg)]\u{1B}[0m\r\n")
                 ZModemProgressWindowController.shared.model.statusMessage = msg

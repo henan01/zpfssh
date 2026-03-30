@@ -32,9 +32,11 @@ class SessionManager: ObservableObject {
         let tab = SessionTab(server: server)
         tabs.append(tab)
         activeTabID = tab.id
+        Log.session("打开 tab \(tab.id.uuidString.prefix(8)) → \(server.host):\(server.port) 总数=\(tabs.count)")
     }
 
     func closeTab(_ tab: SessionTab) {
+        Log.session("关闭 tab \(tab.id.uuidString.prefix(8)) 剩余=\(tabs.count - 1)")
         tabs.removeAll { $0.id == tab.id }
         broadcastTargetIDs.remove(tab.id)
         if splitTabID == tab.id { splitTabID = nil }
@@ -58,24 +60,27 @@ class SessionManager: ObservableObject {
             tabs.append(newTab)
         }
         activeTabID = newTab.id
+        Log.session("复制 tab \(tab.id.uuidString.prefix(8)) → 新 tab \(newTab.id.uuidString.prefix(8))")
     }
 
     /// Close the focused pane inside the active tab; if only one pane, close the whole tab
     func closeFocusedPane() {
         guard let tab = activeTab else { return }
         if tab.layout.allLeafIDs.count <= 1 {
+            Log.session("关闭唯一 pane，关闭整个 tab \(tab.id.uuidString.prefix(8))")
             closeTab(tab)
         } else {
+            Log.session("关闭 pane \(tab.focusedPaneID.uuidString.prefix(8)) in tab \(tab.id.uuidString.prefix(8))")
             tab.closePane(tab.focusedPaneID)
         }
     }
 
     func activateTab(_ tab: SessionTab) {
         if tab.id == splitTabID {
-            // Clicking the split tab swaps primary and secondary panes
             splitTabID = activeTabID
         }
         activeTabID = tab.id
+        Log.session("激活 tab \(tab.id.uuidString.prefix(8))")
     }
 
     /// Show `tab` in the secondary split pane alongside the current active tab.
@@ -188,9 +193,10 @@ class SessionManager: ObservableObject {
         isBroadcastMode.toggle()
         if !isBroadcastMode {
             broadcastTargetIDs.removeAll()
+            Log.session("广播模式 关闭")
         } else {
-            // Default: all connected tabs
             broadcastTargetIDs = Set(connectedTabs.map { $0.id })
+            Log.session("广播模式 开启, 目标 \(broadcastTargetIDs.count) 个 tab")
         }
     }
 
@@ -205,6 +211,7 @@ class SessionManager: ObservableObject {
     /// Sends a notification so TerminalPaneViews can pick up the broadcast command
     func broadcast(_ command: String) {
         let targets = isBroadcastMode ? broadcastTargetIDs : Set(tabs.map { $0.id })
+        Log.session("广播命令 → \(targets.count) 个 tab: \(command.prefix(50))")
         NotificationCenter.default.post(
             name: .broadcastCommand,
             object: nil,

@@ -33,6 +33,7 @@ class ServerStore: ObservableObject {
         }
         updateGroups()
         save()
+        Log.server("添加服务器 \(server.host):\(server.port) auth=\(server.authType) id=\(server.id.uuidString.prefix(8))")
     }
 
     func update(_ server: Server, password: String? = nil) {
@@ -47,10 +48,12 @@ class ServerStore: ObservableObject {
             }
             updateGroups()
             save()
+            Log.server("更新服务器 \(server.host):\(server.port) id=\(server.id.uuidString.prefix(8))")
         }
     }
 
     func delete(_ server: Server) {
+        Log.server("删除服务器 \(server.host):\(server.port) id=\(server.id.uuidString.prefix(8))")
         servers.removeAll { $0.id == server.id }
         CredentialService.shared.delete(for: server.id)
         updateGroups()
@@ -95,6 +98,7 @@ class ServerStore: ObservableObject {
     /// Existing servers with the same ID are updated; new ones are appended.
     func importData(_ data: Data) throws {
         let file = try JSONDecoder().decode(ServerExportFile.self, from: data)
+        Log.server("导入 \(file.servers.count) 个服务器")
         for entry in file.servers {
             if let idx = servers.firstIndex(where: { $0.id == entry.server.id }) {
                 servers[idx] = entry.server
@@ -129,8 +133,12 @@ class ServerStore: ObservableObject {
     private func load() {
         guard let data = UserDefaults.standard.data(forKey: storageKey),
               let decoded = try? JSONDecoder().decode([Server].self, from: data)
-        else { return }
+        else {
+            Log.server("无已保存服务器数据")
+            return
+        }
         servers = decoded
         updateGroups()
+        Log.server("加载 \(servers.count) 个服务器, \(groups.count) 个分组")
     }
 }

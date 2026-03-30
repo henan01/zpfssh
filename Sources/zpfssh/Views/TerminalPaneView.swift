@@ -41,15 +41,19 @@ final class TerminalCoordinator: NSObject, LocalProcessTerminalViewDelegate, @un
 
     // MARK: LocalProcessTerminalViewDelegate (SSH-agent / fallback path)
 
-    func sizeChanged(source: LocalProcessTerminalView, newCols: Int, newRows: Int) {}
+    func sizeChanged(source: LocalProcessTerminalView, newCols: Int, newRows: Int) {
+        Log.ssh("终端尺寸变化 pane=\(paneID.uuidString.prefix(8)) \(newCols)x\(newRows)")
+    }
 
     func setTerminalTitle(source: LocalProcessTerminalView, title: String) {
+        Log.ssh("终端标题变化 pane=\(paneID.uuidString.prefix(8)) title='\(title)'")
         handleTitleChange(title)
     }
 
     func hostCurrentDirectoryUpdate(source: TerminalView, directory: String?) {}
 
     func processTerminated(source: TerminalView, exitCode: Int32?) {
+        Log.ssh("SSH 进程退出 pane=\(paneID.uuidString.prefix(8)) exitCode=\(exitCode.map { String($0) } ?? "nil")")
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
             self.tab?.setConnected(false, forPane: self.paneID)
@@ -86,6 +90,7 @@ struct TerminalPaneView: NSViewRepresentable {
         // which would normally dismantle the old TerminalView and create a new one.
         // By caching the NSView in PaneSession, we keep the SSH process alive.
         if let cached = tab.paneSessions[paneID]?.cachedTerminalView as? LocalProcessTerminalView {
+            Log.ssh("复用缓存终端 pane=\(paneID.uuidString.prefix(8))")
             cached.removeFromSuperview()
             cached.processDelegate = context.coordinator
             cached.autoresizingMask = [.width, .height]
@@ -97,6 +102,7 @@ struct TerminalPaneView: NSViewRepresentable {
             return cached
         }
 
+        Log.ssh("创建新终端 pane=\(paneID.uuidString.prefix(8)) → \(server.host):\(server.port)")
         let tv = makeZModemView(coordinator: context.coordinator)
         tv.autoresizingMask = [.width, .height]
         tab.paneSessions[paneID]?.cachedTerminalView = tv
@@ -140,7 +146,10 @@ struct TerminalPaneView: NSViewRepresentable {
         // When just repositioning (split/resize), the cached view === nsView → keep alive.
         let cached = coordinator.tab?.paneSessions[coordinator.paneID]?.cachedTerminalView
         if cached == nil || cached !== nsView {
+            Log.ssh("终止 SSH 进程 pane=\(coordinator.paneID.uuidString.prefix(8))")
             (nsView as? LocalProcessTerminalView)?.terminate()
+        } else {
+            Log.ssh("保留 SSH 连接（布局变化）pane=\(coordinator.paneID.uuidString.prefix(8))")
         }
     }
 
@@ -167,12 +176,14 @@ struct TerminalPaneView: NSViewRepresentable {
             execArgs   = server.sshArgs()
         }
 
+        Log.ssh("启动进程 \(executable) args=\(execArgs.joined(separator: " "))")
         tv.startProcess(executable: executable, args: execArgs,
                         environment: sshEnv.map { "\($0.key)=\($0.value)" },
                         execName: "ssh")
 
         DispatchQueue.main.asyncAfter(deadline: .now() + 2) { [weak tab] in
             tab?.setConnected(true, forPane: paneID)
+            Log.ssh("标记已连接 pane=\(paneID.uuidString.prefix(8))")
         }
         return tv
     }
@@ -312,13 +323,13 @@ struct TerminalPaneView: NSViewRepresentable {
             if navKeys.contains(keyCode) {
                 let appCursor = tv.terminal.applicationCursor
                 let enhFlags = tv.terminal.keyboardEnhancementFlags
-                NSLog("[NavKey] keyCode=%d flags=0x%lx stripped=0x%lx appCursor=%d enhFlags=%d chars='%@'",
-                      keyCode, rawFlags.rawValue, flags.rawValue,
-                      appCursor ? 1 : 0, enhFlags.rawValue,
-                      event.characters ?? "nil")
+                Log.key("keyCode=\(keyCode) rawFlags=0x\(String(rawFlags.rawValue, radix: 16)) stripped=0x\(String(flags.rawValue, radix: 16)) appCursor=\(appCursor) enhFlags=\(enhFlags.rawValue) chars='\(event.characters ?? "nil")'")
             }
 
-            guard tv.terminal.keyboardEnhancementFlags.isEmpty else { return event }
+            guard tv.terminal.keyboardEnhancementFlags.isEmpty else {
+                Log.key("跳过: keyboardEnhancementFlags 非空")
+                return event
+            }
             if flags.contains(.control) { return event }
 
             // Cmd+Home / Cmd+End → 跳到 scrollback 顶部 / 底部
@@ -327,12 +338,12 @@ struct TerminalPaneView: NSViewRepresentable {
                 case kVK_Home:
                     tv.selectNone()
                     tv.scroll(toPosition: 0)
-                    NSLog("[NavKey] Cmd+Home → scroll to top")
+                    Log.key("Cmd+Home → scroll to top")
                     return nil
                 case kVK_End:
                     tv.selectNone()
                     tv.scroll(toPosition: 1)
-                    NSLog("[NavKey] Cmd+End → scroll to bottom")
+                    Log.key("Cmd+End → scroll to bottom")
                     return nil
                 default:
                     break
@@ -345,12 +356,12 @@ struct TerminalPaneView: NSViewRepresentable {
                 case kVK_PageUp:
                     tv.selectNone()
                     tv.pageUp()
-                    NSLog("[NavKey] Shift+PageUp → buffer scroll up")
+                    Log.key("Shift+PageUp → buffer scroll up")
                     return nil
                 case kVK_PageDown:
                     tv.selectNone()
                     tv.pageDown()
-                    NSLog("[NavKey] Shift+PageDown → buffer scroll down")
+                    Log.key("Shift+PageDown → buffer scroll down")
                     return nil
                 default:
                     break
@@ -364,20 +375,20 @@ struct TerminalPaneView: NSViewRepresentable {
                 case kVK_Home:
                     let seq = appCursor ? "\u{1B}OH" : "\u{1B}[H"
                     tv.send(txt: seq)
-                    NSLog("[NavKey] Home → sent '%@' (appCursor=%d)", seq.debugDescription, appCursor ? 1 : 0)
+                    Log.key("Home → sent \(seq.debugDescription) appCursor=\(appCursor)")
                     return nil
                 case kVK_End:
                     let seq = appCursor ? "\u{1B}OF" : "\u{1B}[F"
                     tv.send(txt: seq)
-                    NSLog("[NavKey] End → sent '%@' (appCursor=%d)", seq.debugDescription, appCursor ? 1 : 0)
+                    Log.key("End → sent \(seq.debugDescription) appCursor=\(appCursor)")
                     return nil
                 case kVK_PageUp:
                     tv.send(txt: "\u{1B}[5~")
-                    NSLog("[NavKey] PageUp → sent ESC[5~")
+                    Log.key("PageUp → sent ESC[5~")
                     return nil
                 case kVK_PageDown:
                     tv.send(txt: "\u{1B}[6~")
-                    NSLog("[NavKey] PageDown → sent ESC[6~")
+                    Log.key("PageDown → sent ESC[6~")
                     return nil
                 default:
                     break

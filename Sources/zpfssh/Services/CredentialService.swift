@@ -39,22 +39,31 @@ final class CredentialService: @unchecked Sendable {
     func save(_ password: String, for serverID: UUID) {
         guard !password.isEmpty,
               let data = password.data(using: .utf8),
-              let encrypted = aesCBCEncrypt(data, key: masterKey) else { return }
+              let encrypted = aesCBCEncrypt(data, key: masterKey) else {
+            Log.error("Credential", "加密失败 server=\(serverID.uuidString.prefix(8))")
+            return
+        }
         let file = credPath(serverID)
         try? encrypted.write(to: file)
         try? FileManager.default.setAttributes(
             [.posixPermissions: 0o600], ofItemAtPath: file.path)
+        Log.cred("保存凭证 server=\(serverID.uuidString.prefix(8)) size=\(encrypted.count)B")
     }
 
     func load(for serverID: UUID) -> String? {
         let file = credPath(serverID)
         guard let encrypted = try? Data(contentsOf: file),
-              let decrypted = aesCBCDecrypt(encrypted, key: masterKey) else { return nil }
+              let decrypted = aesCBCDecrypt(encrypted, key: masterKey) else {
+            Log.cred("加载凭证失败（无文件或解密失败）server=\(serverID.uuidString.prefix(8))")
+            return nil
+        }
+        Log.cred("加载凭证成功 server=\(serverID.uuidString.prefix(8))")
         return String(data: decrypted, encoding: .utf8)
     }
 
     func delete(for serverID: UUID) {
         try? FileManager.default.removeItem(at: credPath(serverID))
+        Log.cred("删除凭证 server=\(serverID.uuidString.prefix(8))")
     }
 
     // MARK: - Master Key (stored on disk, never in keychain)
@@ -64,25 +73,25 @@ final class CredentialService: @unchecked Sendable {
     }
 
     private func loadOrCreateMasterKey() -> Data {
-        // Try to load existing key from disk
         if let existing = try? Data(contentsOf: masterKeyURL),
            existing.count == kCCKeySizeAES256 {
+            Log.cred("从磁盘加载 master key")
             return existing
         }
 
-        // Also try legacy keychain migration: if a keychain item exists, migrate to disk
         if let keychainKey = legacyKeychainLoad(), keychainKey.count == kCCKeySizeAES256 {
             writeMasterKeyToDisk(keychainKey)
             legacyKeychainDelete()
+            Log.cred("从 Keychain 迁移 master key 到磁盘")
             return keychainKey
         }
 
-        // Generate a fresh key and save it to disk
         var key = Data(count: kCCKeySizeAES256)
         _ = key.withUnsafeMutableBytes {
             SecRandomCopyBytes(kSecRandomDefault, kCCKeySizeAES256, $0.baseAddress!)
         }
         writeMasterKeyToDisk(key)
+        Log.cred("生成新 master key 并保存到磁盘")
         return key
     }
 

@@ -64,10 +64,12 @@ class AppDelegate: NSObject, NSApplicationDelegate {
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.regular)
         NSWindow.allowsAutomaticWindowTabbing = false
+        Log.app("应用启动完成 macOS \(ProcessInfo.processInfo.operatingSystemVersionString)")
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
-        true
+        Log.app("最后窗口关闭，准备退出")
+        return true
     }
 }
 
