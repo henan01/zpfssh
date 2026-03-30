@@ -1,0 +1,186 @@
+name: Build & Release
+
+on:
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: macos-14
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Compute version
+        id: vars
+        shell: bash
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "build_number=$GITHUB_RUN_NUMBER" >> "$GITHUB_OUTPUT"
+
+      - name: Build (Xcode Release)
+        id: build
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          rm -rf build/derivedData
+          mkdir -p build/derivedData
+
+          # Prefer xcpretty if available, but keep the build working without it.
+          if command -v xcpretty >/dev/null 2>&1; then
+            xcodebuild \
+              -project ZenSSH.xcodeproj \
+              -scheme ZenSSH \
+              -configuration Release \
+              -derivedDataPath build/derivedData \
+              CODE_SIGNING_ALLOWED=NO \
+              CODE_SIGNING_REQUIRED=NO \
+              | xcpretty
+          else
+            xcodebuild \
+              -project ZenSSH.xcodeproj \
+              -scheme ZenSSH \
+              -configuration Release \
+              -derivedDataPath build/derivedData \
+              CODE_SIGNING_ALLOWED=NO \
+              CODE_SIGNING_REQUIRED=NO
+          fi
+
+          APP_PATH="$(ls -d build/derivedData/Build/Products/Release/*.app 2>/dev/null | head -n 1 || true)"
+          if [ -z "${APP_PATH}" ]; then
+            echo "Failed to locate built .app bundle under build/derivedData/Build/Products/Release/"
+            ls -R build/derivedData/Build/Products/Release || true
+            exit 1
+          fi
+
+          echo "app_path=$APP_PATH" >> "$GITHUB_OUTPUT"
+
+      - name: Package DMG
+        shell: bash
+        env:
+          APP_NAME: zpfssh
+          VERSION: ${{ steps.vars.outputs.version }}
+          BUILD_NUMBER: ${{ steps.vars.outputs.build_number }}
+        run: |
+          set -euo pipefail
+
+          STAGING_DIR="dmg_staging"
+          DMG_NAME="${APP_NAME}-${VERSION}.dmg"
+
+          rm -rf "$STAGING_DIR" "$DMG_NAME" "${APP_NAME}.app"
+          mkdir -p "$STAGING_DIR"
+
+          # Copy built app to expected folder name for consistency
+          cp -R "${{ steps.build.outputs.app_path }}" "${STAGING_DIR}/${APP_NAME}.app"
+
+          PLIST="${STAGING_DIR}/${APP_NAME}.app/Contents/Info.plist"
+          /usr/libexec/PlistBuddy -c "Set :CFBundleShortVersionString $VERSION" "$PLIST"
+          /usr/libexec/PlistBuddy -c "Set :CFBundleVersion $BUILD_NUMBER" "$PLIST"
+
+          # Ad-hoc codesign for local distribution convenience
+          codesign --force --deep --sign - --entitlements "zpfssh.entitlements" "${STAGING_DIR}/${APP_NAME}.app"
+
+          ln -s /Applications "${STAGING_DIR}/Applications" || true
+
+          hdiutil create \
+            -volname "${APP_NAME}" \
+            -srcfolder "${STAGING_DIR}" \
+            -ov \
+            -format UDZO \
+            -fs HFS+ \
+            "${DMG_NAME}"
+
+      - name: Publish GitHub Release asset
+        uses: softprops/action-gh-release@v2
+        with:
+          files: zpfssh-${{ steps.vars.outputs.version }}.dmg
+
+      - name: Generate Sparkle appcast (EdDSA)
+        shell: bash
+        env:
+          SPARKLE_PRIVATE_KEY: ${{ secrets.SPARKLE_PRIVATE_KEY }}
+          REPO_OWNER: henan01
+          REPO_NAME: zpfssh
+          TAG_NAME: ${{ github.ref_name }}
+          VERSION: ${{ steps.vars.outputs.version }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${SPARKLE_PRIVATE_KEY:-}" ]; then
+            echo "Missing secret: SPARKLE_PRIVATE_KEY"
+            echo "Please set it to the PRIVATE_B64 value Sparkle keygen produced."
+            exit 1
+          fi
+
+          APP_NAME="zpfssh"
+          DMG_FILE="${APP_NAME}-${VERSION}.dmg"
+
+          ARCHIVES_DIR="sparkle_archives"
+          rm -rf "$ARCHIVES_DIR"
+          mkdir -p "$ARCHIVES_DIR"
+
+          cp "$DMG_FILE" "$ARCHIVES_DIR/$DMG_FILE"
+
+          FEED_URL="https://github.com/${REPO_OWNER}/${REPO_NAME}/releases/latest/download/appcast.xml"
+          curl -fsSL "$FEED_URL" -o "$ARCHIVES_DIR/appcast.xml" || true
+
+          echo "Downloading Sparkle tools..."
+          TOOLS_ZIP="sparkle-tools.zip"
+          TOOLS_URL="https://sourceforge.net/projects/sparkle-2.mirror/files/2.9.0/Sparkle-for-Swift-Package-Manager.zip/download"
+          curl -fsSL "$TOOLS_URL" -o "$TOOLS_ZIP"
+
+          rm -rf sparkle_tools
+          mkdir -p sparkle_tools
+          unzip -q "$TOOLS_ZIP" -d sparkle_tools
+
+          # Locate generate_appcast binary inside the unpacked archive
+          GENERATE_APPCAST_PATH="$(python3 - <<'PY'
+          import os
+          import sys
+          root = "sparkle_tools"
+          target = "generate_appcast"
+          for dirpath, dirnames, filenames in os.walk(root):
+              if target in filenames:
+                  print(os.path.join(dirpath, target))
+                  sys.exit(0)
+          print("")
+          sys.exit(1)
+          PY
+          )"
+
+          if [ -z "${GENERATE_APPCAST_PATH}" ]; then
+            echo "Failed to locate generate_appcast binary in Sparkle tools zip."
+            echo "Please check the extracted folder structure."
+            exit 1
+          fi
+
+          chmod +x "$GENERATE_APPCAST_PATH"
+
+          DOWNLOAD_URL_PREFIX="https://github.com/${REPO_OWNER}/${REPO_NAME}/releases/download/${TAG_NAME}/"
+          echo "Generating signed appcast..."
+          echo "$SPARKLE_PRIVATE_KEY" | "$GENERATE_APPCAST_PATH" \
+            --ed-key-file - \
+            --download-url-prefix "$DOWNLOAD_URL_PREFIX" \
+            "$ARCHIVES_DIR"
+
+          echo "Uploading appcast and deltas..."
+          shopt -s nullglob
+          FILES=("$ARCHIVES_DIR/appcast.xml")
+          for f in "$ARCHIVES_DIR"/*.delta; do
+            FILES+=("$f")
+          done
+
+          # Upload to the same tag release (created in the step above)
+          if ! command -v gh >/dev/null 2>&1; then
+            echo "GitHub CLI (gh) not found on runner."
+            exit 1
+          fi
+          GH_TOKEN="${{ github.token }}" \
+          gh release upload "$TAG_NAME" "${FILES[@]}" --clobber
+

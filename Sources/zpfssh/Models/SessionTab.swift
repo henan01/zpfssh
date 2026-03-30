@@ -166,6 +166,18 @@ indirect enum PaneLayout: Identifiable, Sendable {
         }
     }
 
+    /// Replace a leaf ID with a new ID — used when transferring a pane session.
+    func replaceLeaf(_ oldID: UUID, with newID: UUID) -> PaneLayout {
+        switch self {
+        case .leaf(let id):
+            return id == oldID ? .leaf(id: newID) : self
+        case .split(let sid, let dir, let ratio, let first, let second):
+            return .split(id: sid, direction: dir, ratio: ratio,
+                          first: first.replaceLeaf(oldID, with: newID),
+                          second: second.replaceLeaf(oldID, with: newID))
+        }
+    }
+
     /// Swap two leaf IDs in place — used for drag-to-rearrange panes.
     func swapLeaves(_ a: UUID, _ b: UUID) -> PaneLayout {
         switch self {
@@ -223,6 +235,17 @@ class SessionTab: ObservableObject, Identifiable {
         self.focusedPaneID = paneID
         let pane = PaneSession(id: paneID, server: server)
         self.paneSessions = [paneID: pane]
+    }
+
+    /// Initialize a tab wrapping an existing PaneSession (preserves live SSH connection).
+    init(existingSession: PaneSession) {
+        self.server = existingSession.server
+        self.id = UUID()
+        self.displayTitle = existingSession.server.displayTitle
+        self.layout = .leaf(id: existingSession.id)
+        self.primaryPaneID = existingSession.id
+        self.focusedPaneID = existingSession.id
+        self.paneSessions = [existingSession.id: existingSession]
     }
 
     func splitFocused(direction: SplitDirection) {
@@ -287,6 +310,26 @@ class SessionTab: ObservableObject, Identifiable {
                 focusedPaneID = layout.allLeafIDs.first ?? UUID()
             }
         }
+    }
+
+    /// Split a pane and insert an existing PaneSession (preserves live SSH connection).
+    @discardableResult
+    func splitPaneWithSession(
+        _ targetPaneID: UUID,
+        direction: SplitDirection,
+        session: PaneSession,
+        placeNewFirst: Bool = false
+    ) -> Bool {
+        guard layout.allLeafIDs.contains(targetPaneID) else { return false }
+        layout = layout.splitLeaf(
+            targetPaneID,
+            direction: direction,
+            newLeafID: session.id,
+            placeNewFirst: placeNewFirst
+        )
+        paneSessions[session.id] = session
+        focusedPaneID = session.id
+        return true
     }
 
     func swapPanes(_ a: UUID, _ b: UUID) {

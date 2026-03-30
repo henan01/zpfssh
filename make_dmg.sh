@@ -35,6 +35,27 @@ fi
 echo "==> 代码签名 (ad-hoc) ..."
 codesign --force --deep --sign - --entitlements "zpfssh.entitlements" "${APP_NAME}.app"
 
+# Embed Sparkle.framework for local DMG runs
+SPARKLE_FRAMEWORK_SRC=""
+if [ -d ".build/arm64-apple-macosx/release/Sparkle.framework" ]; then
+  SPARKLE_FRAMEWORK_SRC=".build/arm64-apple-macosx/release/Sparkle.framework"
+elif [ -d ".build/arm64-apple-macosx/release/Sparkle/Sparkle.framework" ]; then
+  SPARKLE_FRAMEWORK_SRC=".build/arm64-apple-macosx/release/Sparkle/Sparkle.framework"
+elif [ -d ".build/release/Sparkle.framework" ]; then
+  SPARKLE_FRAMEWORK_SRC=".build/release/Sparkle.framework"
+fi
+
+if [ -n "$SPARKLE_FRAMEWORK_SRC" ]; then
+  echo "==> Embed Sparkle.framework ..."
+  mkdir -p "${APP_NAME}.app/Contents/Frameworks"
+  cp -R "$SPARKLE_FRAMEWORK_SRC" "${APP_NAME}.app/Contents/Frameworks/"
+  mkdir -p "${APP_NAME}.app/Contents/MacOS"
+  cp -R "$SPARKLE_FRAMEWORK_SRC" "${APP_NAME}.app/Contents/MacOS/"
+  codesign --force --deep --sign - --entitlements "zpfssh.entitlements" "${APP_NAME}.app"
+else
+  echo "==> Skip Sparkle.framework embedding (not found in SwiftPM build output)."
+fi
+
 # ── DMG staging area ───────────────────────────────────────────────────────
 echo "==> 创建 DMG ..."
 rm -rf "${STAGING_DIR}"

@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import Sparkle
 
 @main
 struct zpfsshApp: App {
@@ -60,11 +61,24 @@ struct zpfsshApp: App {
     }
 }
 
+@MainActor
 class AppDelegate: NSObject, NSApplicationDelegate {
+    private var updaterController: SPUStandardUpdaterController?
+
     func applicationDidFinishLaunching(_ notification: Notification) {
         NSApp.setActivationPolicy(.regular)
         NSWindow.allowsAutomaticWindowTabbing = false
         Log.app("应用启动完成 macOS \(ProcessInfo.processInfo.operatingSystemVersionString)")
+
+        // Start Sparkle's updater so that scheduled automatic checks / downloads / installs can run.
+        // The actual policy is configured via Info.plist keys (SUFeedURL, SUPublicEDKey, SUAutomaticallyUpdate, etc).
+        if updaterController == nil {
+            updaterController = SPUStandardUpdaterController(
+                startingUpdater: true,
+                updaterDelegate: nil,
+                userDriverDelegate: nil
+            )
+        }
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {

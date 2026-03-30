@@ -22,6 +22,31 @@ cp ".build/release/$APP_NAME" "$APP_NAME.app/Contents/MacOS/"
 cp "Info.plist" "$APP_NAME.app/Contents/"
 cp "Sources/zpfssh/Resources/AppIcon.icns" "$APP_NAME.app/Contents/Resources/"
 
+# Embed Sparkle.framework
+# Sparkle is linked as a dynamic framework with an @rpath that (in your current build)
+# can search relative to Contents/MacOS. To make local builds runnable, we embed it
+# into both Locations.
+SPARKLE_FRAMEWORK_SRC=""
+if [ -d ".build/arm64-apple-macosx/release/Sparkle.framework" ]; then
+  SPARKLE_FRAMEWORK_SRC=".build/arm64-apple-macosx/release/Sparkle.framework"
+elif [ -d ".build/arm64-apple-macosx/release/Sparkle/Sparkle.framework" ]; then
+  SPARKLE_FRAMEWORK_SRC=".build/arm64-apple-macosx/release/Sparkle/Sparkle.framework"
+elif [ -d ".build/release/Sparkle.framework" ]; then
+  SPARKLE_FRAMEWORK_SRC=".build/release/Sparkle.framework"
+fi
+
+if [ -z "$SPARKLE_FRAMEWORK_SRC" ]; then
+  echo "ERROR: Could not find Sparkle.framework under SwiftPM build output."
+  echo "Looked for: .build/arm64-apple-macosx/release/Sparkle.framework (and a few variants)."
+  exit 1
+fi
+
+mkdir -p "$APP_NAME.app/Contents/Frameworks"
+cp -R "$SPARKLE_FRAMEWORK_SRC" "$APP_NAME.app/Contents/Frameworks/"
+
+mkdir -p "$APP_NAME.app/Contents/MacOS"
+cp -R "$SPARKLE_FRAMEWORK_SRC" "$APP_NAME.app/Contents/MacOS/"
+
 echo "==> 代码签名 (ad-hoc, with entitlements) ..."
 codesign --force --deep --sign - --entitlements "zpfssh.entitlements" "$APP_NAME.app"
 

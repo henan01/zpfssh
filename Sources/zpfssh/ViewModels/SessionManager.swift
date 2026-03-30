@@ -117,7 +117,7 @@ class SessionManager: ObservableObject {
     }
 
     /// Merge a tab into a specific pane of another tab by splitting that pane.
-    /// This enables free workspace composition from multiple tab sessions.
+    /// Transfers the existing PaneSession to preserve the live SSH connection.
     @discardableResult
     func mergeTabIntoPane(
         sourceTabID: UUID,
@@ -126,23 +126,23 @@ class SessionManager: ObservableObject {
         position: PaneDropPosition = .center
     ) -> Bool {
         guard sourceTabID != targetTabID,
-              let sourceIndex = tabs.firstIndex(where: { $0.id == sourceTabID }),
-              let targetIndex = tabs.firstIndex(where: { $0.id == targetTabID }) else {
+              let sourceTab = tabs.first(where: { $0.id == sourceTabID }),
+              let targetTab = tabs.first(where: { $0.id == targetTabID }),
+              let sourceSession = sourceTab.paneSessions[sourceTab.focusedPaneID] else {
             return false
         }
 
-        let sourceTab = tabs[sourceIndex]
-        let targetTab = tabs[targetIndex]
-
-        guard targetTab.splitPane(
+        guard targetTab.splitPaneWithSession(
             targetPaneID,
             direction: position.splitDirection,
-            with: sourceTab.server,
+            session: sourceSession,
             placeNewFirst: position.placeNewFirst
-        ) != nil else {
+        ) else {
             return false
         }
 
+        // Don't remove sourceSession from sourceTab.paneSessions —
+        // dismantleNSView needs the cached reference to skip SSH termination.
         if splitTabID == sourceTabID {
             splitTabID = nil
         }
@@ -152,7 +152,8 @@ class SessionManager: ObservableObject {
         return true
     }
 
-    /// Replace a pane's session with a source tab's server (center drop).
+    /// Replace a pane's session with a source tab's session (center drop).
+    /// Transfers existing PaneSessions to preserve live SSH connections.
     /// The displaced pane content becomes a new standalone tab in the tab bar.
     @discardableResult
     func replaceTabInPane(
@@ -163,23 +164,27 @@ class SessionManager: ObservableObject {
         guard sourceTabID != targetTabID,
               let sourceTab = tabs.first(where: { $0.id == sourceTabID }),
               let targetTab = tabs.first(where: { $0.id == targetTabID }),
-              let targetPane = targetTab.paneSessions[targetPaneID] else {
+              let targetSession = targetTab.paneSessions[targetPaneID],
+              let sourceSession = sourceTab.paneSessions[sourceTab.focusedPaneID] else {
             return false
         }
 
-        // Create a new standalone tab for the displaced pane content
-        let displacedTab = SessionTab(server: targetPane.server)
+        // Create a new standalone tab reusing the displaced pane's live session
+        let displacedTab = SessionTab(existingSession: targetSession)
         if let idx = tabs.firstIndex(where: { $0.id == sourceTabID }) {
             tabs.insert(displacedTab, at: idx)
         } else {
             tabs.append(displacedTab)
         }
 
-        // Replace the target pane's session with source tab's server
-        targetTab.paneSessions[targetPaneID] = PaneSession(id: targetPaneID, server: sourceTab.server)
-        targetTab.focusedPaneID = targetPaneID
+        // Replace the target pane with source session (swap leaf ID in layout)
+        targetTab.layout = targetTab.layout.replaceLeaf(targetPaneID, with: sourceSession.id)
+        targetTab.paneSessions[sourceSession.id] = sourceSession
+        // Keep targetPaneID in paneSessions so dismantleNSView can find cached view
+        targetTab.focusedPaneID = sourceSession.id
 
-        // Remove source tab
+        // Don't remove sourceSession from sourceTab.paneSessions —
+        // dismantleNSView needs the cached reference to skip SSH termination.
         if splitTabID == sourceTabID { splitTabID = nil }
         broadcastTargetIDs.remove(sourceTabID)
         tabs.removeAll { $0.id == sourceTabID }

@@ -4,7 +4,10 @@
       "*",
       "Bash(swift build:*)",
       "Bash(xcodebuild -project ZenSSH.xcodeproj -scheme zpfssh -configuration Debug build)",
-      "Bash(./build.sh)"
+      "Bash(./build.sh)",
+      "Read(//Applications/**)",
+      "Bash(mdfind \"kMDItemFSName == ''''xcodebuild''''\")",
+      "Bash(find /Users/zhangpanfeng/work/gitlab/zenlite/.build -name libSparkle* -o -name Sparkle.framework)"
     ]
   }
 }

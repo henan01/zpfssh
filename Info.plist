@@ -20,6 +20,19 @@
     <string>1.0.0</string>
     <key>CFBundleVersion</key>
     <string>1</string>
+    <!-- Sparkle automatic update configuration -->
+    <key>SUFeedURL</key>
+    <string>https://github.com/henan01/zpfssh/releases/latest/download/appcast.xml</string>
+    <key>SUPublicEDKey</key>
+    <string>2sm/8+LB1ZqipaT+6+Qnk9vAKbgeQjFcCFoFhzxA00o=</string>
+    <key>SUEnableAutomaticChecks</key>
+    <true/>
+    <key>SUAllowsAutomaticUpdates</key>
+    <true/>
+    <key>SUAutomaticallyUpdate</key>
+    <true/>
+    <key>SUScheduledCheckInterval</key>
+    <integer>86400</integer>
     <key>LSMinimumSystemVersion</key>
     <string>13.0</string>
     <key>NSHighResolutionCapable</key>

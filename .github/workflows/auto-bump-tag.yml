@@ -1,0 +1,84 @@
+name: Auto Bump Patch Tag
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  bump:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Fetch tags
+        run: |
+          git fetch --tags --force
+
+      - name: Compute next tag (patch + 1)
+        id: version
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          LATEST_TAG="$(git tag -l 'v[0-9]*.[0-9]*.[0-9]*' --sort=-v:refname | head -n 1 || true)"
+
+          if [ -z "${LATEST_TAG}" ]; then
+            MAJOR=1
+            MINOR=0
+            PATCH=0
+          else
+            # Strip leading 'v' and parse semver
+            TAG_NO_V="${LATEST_TAG#v}"
+            MAJOR="$(python3 - <<PY
+import sys
+maj,mi,pa = sys.argv[1].split('.')
+print(maj)
+PY
+"$TAG_NO_V")"
+            MINOR="$(python3 - <<PY
+import sys
+maj,mi,pa = sys.argv[1].split('.')
+print(mi)
+PY
+"$TAG_NO_V")"
+            PATCH="$(python3 - <<PY
+import sys
+maj,mi,pa = sys.argv[1].split('.')
+print(pa)
+PY
+"$TAG_NO_V")"
+          fi
+
+          NEXT_PATCH=$((PATCH + 1))
+          NEXT_TAG="v${MAJOR}.${MINOR}.${NEXT_PATCH}"
+
+          echo "latest_tag=${LATEST_TAG}" >> "$GITHUB_OUTPUT"
+          echo "next_tag=${NEXT_TAG}" >> "$GITHUB_OUTPUT"
+
+      - name: Create and push tag
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          NEXT_TAG="${{ steps.version.outputs.next_tag }}"
+
+          # If tag already exists (race), do nothing.
+          if git rev-parse -q --verify "refs/tags/${NEXT_TAG}" >/dev/null; then
+            echo "Tag ${NEXT_TAG} already exists. Skipping."
+            exit 0
+          fi
+
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git tag "${NEXT_TAG}" "${GITHUB_SHA}"
+          git push origin "${NEXT_TAG}"
+
