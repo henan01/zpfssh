@@ -1,5 +1,6 @@
 import SwiftUI
 import AppKit
+import Carbon.HIToolbox
 import SwiftTerm
 
 // MARK: - Coordinator
@@ -14,6 +15,7 @@ final class TerminalCoordinator: NSObject, LocalProcessTerminalViewDelegate, @un
     var lastFontSize: Double = 0
     var observers: [NSObjectProtocol] = []
     var keyMonitors: [Any] = []
+    var didRegisterNavigationKeys = false
 
     init(paneID: UUID) {
         self.paneID = paneID
@@ -91,6 +93,7 @@ struct TerminalPaneView: NSViewRepresentable {
             applyAppearanceIfNeeded(to: cached, context: context)
             registerNotifications(for: cached, coordinator: context.coordinator)
             registerFocusDetection(for: cached, coordinator: context.coordinator)
+            registerNavigationKeys(for: cached, coordinator: context.coordinator)
             return cached
         }
 
@@ -100,6 +103,7 @@ struct TerminalPaneView: NSViewRepresentable {
         applyAppearanceIfNeeded(to: tv, context: context)
         registerNotifications(for: tv, coordinator: context.coordinator)
         registerFocusDetection(for: tv, coordinator: context.coordinator)
+        registerNavigationKeys(for: tv, coordinator: context.coordinator)
         return tv
     }
 
@@ -129,6 +133,7 @@ struct TerminalPaneView: NSViewRepresentable {
         coordinator.observers.removeAll()
         coordinator.keyMonitors.forEach { NSEvent.removeMonitor($0) }
         coordinator.keyMonitors.removeAll()
+        coordinator.didRegisterNavigationKeys = false
 
         // Only terminate SSH if the pane was truly closed (removed from paneSessions)
         // or replaced (cachedTerminalView is a different instance).
@@ -279,6 +284,106 @@ struct TerminalPaneView: NSViewRepresentable {
                     window.makeFirstResponder(tv)
                 }
             }
+            return event
+        }
+        if let monitor { coordinator.keyMonitors.append(monitor) }
+    }
+
+    /// SwiftTerm 的 `keyDown` 非 `open`，无法子类重写；用本地监视器实现 Fn+方向键 / 翻页等与常见终端一致的行为。
+    ///
+    /// 按键映射（对齐 iTerm2 / Terminal.app 行为）：
+    ///   Home / End          → 发送行首/行尾 escape sequence（readline 识别）
+    ///   PageUp / PageDown   → 发送 \x1b[5~ / \x1b[6~（less、man、vim 等程序使用）
+    ///   Shift+PageUp/Down   → 滚动本地 scrollback buffer（不发往远端）
+    ///   Cmd+Home / Cmd+End  → 跳到 scrollback 缓冲区顶部/底部
+    private func registerNavigationKeys(for tv: TerminalView, coordinator: TerminalCoordinator) {
+        guard !coordinator.didRegisterNavigationKeys else { return }
+        coordinator.didRegisterNavigationKeys = true
+        let monitor = NSEvent.addLocalMonitorForEvents(matching: [.keyDown]) { [weak tv] event in
+            guard let tv else { return event }
+            guard tv.window?.firstResponder === tv else { return event }
+
+            let rawFlags = event.modifierFlags
+            let flags = rawFlags.intersection([.command, .option, .control, .shift])
+            let keyCode = Int(event.keyCode)
+
+            // 导航键范围内才打日志（Home=115, End=119, PageUp=116, PageDown=121）
+            let navKeys = [kVK_Home, kVK_End, kVK_PageUp, kVK_PageDown]
+            if navKeys.contains(keyCode) {
+                let appCursor = tv.terminal.applicationCursor
+                let enhFlags = tv.terminal.keyboardEnhancementFlags
+                NSLog("[NavKey] keyCode=%d flags=0x%lx stripped=0x%lx appCursor=%d enhFlags=%d chars='%@'",
+                      keyCode, rawFlags.rawValue, flags.rawValue,
+                      appCursor ? 1 : 0, enhFlags.rawValue,
+                      event.characters ?? "nil")
+            }
+
+            guard tv.terminal.keyboardEnhancementFlags.isEmpty else { return event }
+            if flags.contains(.control) { return event }
+
+            // Cmd+Home / Cmd+End → 跳到 scrollback 顶部 / 底部
+            if flags == .command {
+                switch keyCode {
+                case kVK_Home:
+                    tv.selectNone()
+                    tv.scroll(toPosition: 0)
+                    NSLog("[NavKey] Cmd+Home → scroll to top")
+                    return nil
+                case kVK_End:
+                    tv.selectNone()
+                    tv.scroll(toPosition: 1)
+                    NSLog("[NavKey] Cmd+End → scroll to bottom")
+                    return nil
+                default:
+                    break
+                }
+            }
+
+            // Shift+PageUp / Shift+PageDown → 滚动本地 scrollback buffer
+            if flags == .shift {
+                switch keyCode {
+                case kVK_PageUp:
+                    tv.selectNone()
+                    tv.pageUp()
+                    NSLog("[NavKey] Shift+PageUp → buffer scroll up")
+                    return nil
+                case kVK_PageDown:
+                    tv.selectNone()
+                    tv.pageDown()
+                    NSLog("[NavKey] Shift+PageDown → buffer scroll down")
+                    return nil
+                default:
+                    break
+                }
+            }
+
+            // 无修饰键 → 发送 escape sequence 给远端
+            if flags.isEmpty {
+                let appCursor = tv.terminal.applicationCursor
+                switch keyCode {
+                case kVK_Home:
+                    let seq = appCursor ? "\u{1B}OH" : "\u{1B}[H"
+                    tv.send(txt: seq)
+                    NSLog("[NavKey] Home → sent '%@' (appCursor=%d)", seq.debugDescription, appCursor ? 1 : 0)
+                    return nil
+                case kVK_End:
+                    let seq = appCursor ? "\u{1B}OF" : "\u{1B}[F"
+                    tv.send(txt: seq)
+                    NSLog("[NavKey] End → sent '%@' (appCursor=%d)", seq.debugDescription, appCursor ? 1 : 0)
+                    return nil
+                case kVK_PageUp:
+                    tv.send(txt: "\u{1B}[5~")
+                    NSLog("[NavKey] PageUp → sent ESC[5~")
+                    return nil
+                case kVK_PageDown:
+                    tv.send(txt: "\u{1B}[6~")
+                    NSLog("[NavKey] PageDown → sent ESC[6~")
+                    return nil
+                default:
+                    break
+                }
+            }
+
             return event
         }
         if let monitor { coordinator.keyMonitors.append(monitor) }
