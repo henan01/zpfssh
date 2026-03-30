@@ -10,7 +10,10 @@ private let ZBIN32: UInt8 = 0x43  // C  (binary CRC-32 frame)
 
 private let ZRQINIT: UInt8 = 0   // remote sz  → we are receiver
 private let ZRINIT:  UInt8 = 1   // remote rz  → we are sender
+private let ZSINIT:  UInt8 = 2
+private let ZACK:    UInt8 = 3
 private let ZFILE:   UInt8 = 4
+private let ZSKIP:   UInt8 = 5
 private let ZFIN:    UInt8 = 8
 private let ZRPOS:   UInt8 = 9
 private let ZDATA:   UInt8 = 10
@@ -20,6 +23,12 @@ private let ZCRCE: UInt8 = 0x68  // end of file
 private let ZCRCG: UInt8 = 0x69  // go (no ack)
 private let ZCRCQ: UInt8 = 0x6A  // ack required
 private let ZCRCW: UInt8 = 0x6B  // wait for ack
+
+// ZRINIT capability flags (in p0)
+private let ZF0_CANFDX:  UInt8 = 0x01
+private let ZF0_CANOVIO: UInt8 = 0x02
+private let ZF0_CANFC32: UInt8 = 0x20
+private let ZF0_ESCCTL:  UInt8 = 0x40
 
 // MARK: - CRC-16 / XMODEM
 
@@ -32,6 +41,20 @@ private func crc16(_ bytes: [UInt8]) -> UInt16 {
         }
     }
     return crc
+}
+
+// MARK: - CRC-32 (ZMODEM)
+
+private func crc32(_ bytes: [UInt8]) -> UInt32 {
+    var crc: UInt32 = 0xFFFF_FFFF
+    for b in bytes {
+        crc ^= UInt32(b)
+        for _ in 0..<8 {
+            let mask: UInt32 = (crc & 1) != 0 ? 0xEDB8_8320 : 0
+            crc = (crc >> 1) ^ mask
+        }
+    }
+    return ~crc
 }
 
 // MARK: - ZModemEngine
@@ -84,6 +107,7 @@ final class ZModemEngine {
     /// Number of decoded bytes needed for the current binary frame header.
     /// ZBIN (CRC-16) = 7 bytes (5 hdr + 2 CRC).  ZBIN32 (CRC-32) = 9 bytes (5 hdr + 4 CRC).
     private var binHdrNeeded: Int = 7
+    private var dataCrcBytes: Int = 2
 
     // MARK: Private: receive state
 
@@ -97,6 +121,22 @@ final class ZModemEngine {
     private var txFiles: [(name: String, data: Data)] = []
     private var txIndex  = 0
     private var txOffset = 0
+    private var txLastEOFSize = 0
+    private var txEscapeCtl = false
+    private var txUseCRC32 = false
+    private var sendPhase: SendPhase = .idle
+    private var sendRetryCount = 0
+    private var sendWatchdog: DispatchWorkItem?
+    private var txSending = false
+
+    private let txQueue = DispatchQueue(label: "zmodem.tx", qos: .userInitiated)
+
+    private enum SendPhase {
+        case idle
+        case waitingZRPOS
+        case streamingData
+        case waitingZRINITOrZFIN
+    }
 
     // MARK: - Public API
 
@@ -116,6 +156,10 @@ final class ZModemEngine {
         txFiles  = files
         txIndex  = 0
         txOffset = 0
+        txLastEOFSize = 0
+        sendPhase = .idle
+        sendRetryCount = 0
+        cancelSendWatchdog()
     }
 
     /// Called after `onNeedFilesForSend` fires and the user has picked files.
@@ -123,6 +167,10 @@ final class ZModemEngine {
         txFiles  = files
         txIndex  = 0
         txOffset = 0
+        txLastEOFSize = 0
+        sendPhase = .idle
+        sendRetryCount = 0
+        cancelSendWatchdog()
         if role == .sending {
             sendNextFile()
         }
@@ -141,14 +189,11 @@ final class ZModemEngine {
 
         case .gotStar:
             if b == ZPAD { phase = .gotTwoStars; return nil }
-            // lrzsz binary frames (ZFILE, ZDATA) use only ONE ZPAD: *\x18A/C...
-            // Hex frames (ZRQINIT, ZRINIT) use two ZPADs: **\x18B...
             if b == ZDLE { phase = .gotZdle; return nil }
             phase = .idle; return b
 
         case .gotTwoStars:
             if b == ZDLE { phase = .gotZdle; return nil }
-            // Got ** but no ZDLE — restart ZPAD detection from scratch.
             if b == ZPAD { phase = .gotTwoStars; return nil }
             phase = .idle; return b
 
@@ -156,11 +201,14 @@ final class ZModemEngine {
             switch b {
             case ZHEX:
                 phase = .hexFrame([])
+                dataCrcBytes = 2
             case ZBIN:
                 binHdrNeeded = 7   // 5 header + 2 CRC-16
+                dataCrcBytes = 2
                 phase = .binHdr([], esc: false)
             case ZBIN32:
                 binHdrNeeded = 9   // 5 header + 4 CRC-32
+                dataCrcBytes = 4
                 phase = .binHdr([], esc: false)
             default:
                 phase = .idle
@@ -173,7 +221,6 @@ final class ZModemEngine {
             chars.append(b)
             if chars.count >= 14 {
                 parseHexFrame(chars)
-                // ZFILE and ZDATA hex frames are followed by a data subpacket.
                 phase = needsDataSubpacket() ? .dataSubpacket([], esc: false) : .idle
             } else {
                 phase = .hexFrame(chars)
@@ -204,16 +251,10 @@ final class ZModemEngine {
 
         case .dataSubpacket(var raw, let esc):
             if esc {
-                // After ZDLE, the terminator bytes are sent as-is (NOT XOR'd with 0x40).
-                // Only regular escaped data bytes are XOR'd with 0x40.
                 if b == ZCRCE || b == ZCRCG || b == ZCRCQ || b == ZCRCW {
                     handleDataSubpacket(raw, terminator: b)
-                    // ZCRCG = streaming "go" → sender immediately sends next chunk with no
-                    // new frame header, so go back to dataSubpacket after draining the CRC.
-                    // ZCRCQ = "ack required" but data also continues immediately.
-                    // All other terminators (ZCRCW, ZCRCE) expect a new frame header next.
                     let cont = (b == ZCRCG || b == ZCRCQ)
-                    phase = .drainCrc(2, esc: false, continueData: cont)
+                    phase = .drainCrc(dataCrcBytes, esc: false, continueData: cont)
                 } else {
                     raw.append(b ^ 0x40)
                     phase = .dataSubpacket(raw, esc: false)
@@ -221,8 +262,6 @@ final class ZModemEngine {
             } else if b == ZDLE {
                 phase = .dataSubpacket(raw, esc: true)
             } else {
-                // ZPAD (0x2A '*') is NOT in lrzsz's escape set, so it can appear as plain
-                // file data inside a subpacket. Treat it — and every other byte — as data.
                 raw.append(b)
                 phase = .dataSubpacket(raw, esc: false)
             }
@@ -237,8 +276,6 @@ final class ZModemEngine {
             } else if b == ZDLE {
                 phase = .drainCrc(remaining, esc: true, continueData: continueData)
             } else {
-                // Treat every byte — including ZPAD (0x2A) — as a CRC byte; a legitimate
-                // CRC value can be 0x2A and it is never ZDLE-escaped by lrzsz.
                 let newRemaining = remaining - 1
                 phase = newRemaining > 0
                     ? .drainCrc(newRemaining, esc: false, continueData: continueData)
@@ -279,14 +316,12 @@ final class ZModemEngine {
         // ── Receive path (remote ran sz) ──────────────────────────────────
         case ZRQINIT:
             role = .receiving
-            // p0 = CANFDX(0x01) | CANOVIO(0x02) — deliberately omit CANFC32(0x20)
-            // so the remote sz uses CRC-16 frames, which our parser handles.
-            sendHex(ZRINIT, p0: 0x03, p1: 0, p2: 0, p3: 0)
+            sendHex(ZRINIT, p0: ZF0_CANFDX | ZF0_CANOVIO, p1: 0, p2: 0, p3: 0)
             onStatusChange?("ZMODEM: 接收开始")
 
         case ZEOF where role == .receiving:
             if le32(p) == rxOffset { saveReceivedFile() }
-            sendHex(ZRINIT, p0: 0x03, p1: 0, p2: 0, p3: 0)
+            sendHex(ZRINIT, p0: ZF0_CANFDX | ZF0_CANOVIO, p1: 0, p2: 0, p3: 0)
 
         case ZFIN where role == .receiving:
             sendHex(ZFIN, p0: 0, p1: 0, p2: 0, p3: 0)
@@ -299,23 +334,70 @@ final class ZModemEngine {
         case ZRINIT:
             if role == .idle || role == .sending {
                 role = .sending
-                if txIndex < txFiles.count {
-                    sendNextFile()
-                } else if !txFiles.isEmpty {
-                    // All files sent; wait for ZFIN exchange
-                    sendHex(ZFIN, p0: 0, p1: 0, p2: 0, p3: 0)
-                } else {
-                    // No files queued — ask caller
-                    onNeedFilesForSend?()
+                // ZRINIT capability flags are carried in ZF0.
+                // In practice some peers expose this in p3; keep p0 as fallback for compatibility.
+                let zf0 = p.3 != 0 ? p.3 : p.0
+                txEscapeCtl = (zf0 & ZF0_ESCCTL) != 0
+                txUseCRC32 = (zf0 & ZF0_CANFC32) != 0
+
+                switch sendPhase {
+                case .waitingZRPOS:
+                    // Remote re-sent ZRINIT — it didn't understand our ZFILE.
+                    // Retry sending the file header (already uses binary frame).
+                    if sendRetryCount < 5 {
+                        sendRetryCount += 1
+                        cancelSendWatchdog()
+                        sendNextFile(retrying: true)
+                    } else {
+                        abortSend(reason: "ZMODEM: 握手失败，已取消")
+                    }
+
+                case .streamingData:
+                    break
+
+                case .waitingZRINITOrZFIN:
+                    cancelSendWatchdog()
+                    sendPhase = .idle
+                    sendRetryCount = 0
+                    if txIndex < txFiles.count {
+                        sendNextFile()
+                    } else {
+                        sendHex(ZFIN, p0: 0, p1: 0, p2: 0, p3: 0)
+                        sendPhase = .waitingZRINITOrZFIN
+                        scheduleSendWatchdog(timeout: 5.0)
+                    }
+
+                case .idle:
+                    cancelSendWatchdog()
+                    sendRetryCount = 0
+                    if txIndex < txFiles.count {
+                        sendNextFile()
+                    } else if !txFiles.isEmpty {
+                        sendHex(ZFIN, p0: 0, p1: 0, p2: 0, p3: 0)
+                        sendPhase = .waitingZRINITOrZFIN
+                        scheduleSendWatchdog(timeout: 5.0)
+                    } else {
+                        onNeedFilesForSend?()
+                    }
                 }
             }
 
         case ZRPOS where role == .sending:
+            cancelSendWatchdog()
+            sendPhase = .idle
+            sendRetryCount = 0
             txOffset = le32(p)
             sendDataFromCurrentOffset()
 
+        case ZSKIP where role == .sending:
+            cancelSendWatchdog()
+            sendPhase = .idle
+            sendRetryCount = 0
+            txIndex += 1
+            sendNextFile()
+
         case ZFIN where role == .sending:
-            // Remote acknowledged our ZFIN
+            cancelSendWatchdog()
             send(Array("OO".utf8))
             onStatusChange?("ZMODEM: 上传完成")
             onTransferDone?()
@@ -365,8 +447,10 @@ final class ZModemEngine {
 
     // MARK: - Send helpers
 
-    private func sendNextFile() {
+    private func sendNextFile(retrying: Bool = false) {
         guard txIndex < txFiles.count else {
+            sendPhase = .waitingZRINITOrZFIN
+            scheduleSendWatchdog(timeout: 5.0)
             sendHex(ZFIN, p0: 0, p1: 0, p2: 0, p3: 0)
             return
         }
@@ -375,8 +459,8 @@ final class ZModemEngine {
         onStatusChange?("ZMODEM: 发送 \(file.name) (\(file.data.count) 字节)")
         onProgress?(file.name, 0, file.data.count)
 
-        // ZFILE header
-        sendHex(ZFILE, p0: 0, p1: 0, p2: 0, p3: 0)
+        // ZFILE header — must be binary frame for lrzsz compatibility
+        sendBinCompat(ZFILE, p0: 0, p1: 0, p2: 0, p3: 0)
 
         // File info subpacket (ZCRCW → wait for ZRPOS before data)
         var info = Array(file.name.utf8)
@@ -384,6 +468,11 @@ final class ZModemEngine {
         info += Array("\(file.data.count) 0 100644 0 1".utf8)
         info.append(0)
         send(makeDataSubpacket(info, terminator: ZCRCW))
+        sendPhase = .waitingZRPOS
+        if !retrying {
+            sendRetryCount = 0
+        }
+        scheduleSendWatchdog(timeout: 5.0)
     }
 
     private func sendDataFromCurrentOffset() {
@@ -397,45 +486,77 @@ final class ZModemEngine {
             return
         }
 
-        // ZDATA header at current offset
+        sendPhase = .streamingData
+        txSending = true
+
+        // ZDATA header — binary frame at current offset
         let o = UInt32(offset)
-        sendHex(ZDATA,
+        sendBinCompat(ZDATA,
                 p0: UInt8(o & 0xFF),
                 p1: UInt8((o >> 8) & 0xFF),
                 p2: UInt8((o >> 16) & 0xFF),
                 p3: UInt8((o >> 24) & 0xFF))
 
-        // Data subpackets (1 KB each)
-        let chunkSize = 1024
-        var pos = offset
-        while pos < data.count {
-            let end  = min(pos + chunkSize, data.count)
-            let chunk = Array(data[pos..<end])
-            let last  = end >= data.count
-            send(makeDataSubpacket(chunk, terminator: last ? ZCRCE : ZCRCG))
-            pos = end
-            txOffset = pos
-            onProgress?(file.name, pos, data.count)
-        }
+        let chunkSize = 8192
+        let fileName = file.name
+        let totalSize = data.count
+        let escCtl = txEscapeCtl
+        let fileIndex = txIndex
 
-        sendEOF(size: data.count)
-        txIndex += 1
-        // Wait for ZRINIT (next file) or ZFIN (all done)
+        txQueue.async { [weak self] in
+            var pos = offset
+            while pos < totalSize {
+                guard let self, self.txSending, self.role == .sending else { return }
+
+                let end  = min(pos + chunkSize, totalSize)
+                let chunk = Array(data[pos..<end])
+                let last  = end >= totalSize
+                let packet = self.buildDataSubpacket(
+                    chunk,
+                    terminator: last ? ZCRCE : ZCRCG,
+                    escapeCtl: escCtl,
+                    useCRC32: self.txUseCRC32
+                )
+                self.send(packet)
+                pos = end
+                self.txOffset = pos
+
+                if pos % (chunkSize * 4) == 0 || last {
+                    self.onProgress?(fileName, pos, totalSize)
+                }
+
+                if !last {
+                    Thread.sleep(forTimeInterval: 0.001)
+                }
+            }
+
+            guard let self, self.txSending else { return }
+            self.txLastEOFSize = totalSize
+            self.sendEOF(size: totalSize)
+            self.txIndex = fileIndex + 1
+            self.sendPhase = .waitingZRINITOrZFIN
+            self.sendRetryCount = 0
+            self.scheduleSendWatchdog(timeout: 8.0)
+        }
     }
 
     private func sendEOF(size: Int) {
         let s = UInt32(size)
-        sendHex(ZEOF,
-                p0: UInt8(s & 0xFF),
-                p1: UInt8((s >> 8) & 0xFF),
-                p2: UInt8((s >> 16) & 0xFF),
-                p3: UInt8((s >> 24) & 0xFF))
+        sendBinCompat(ZEOF,
+                      p0: UInt8(s & 0xFF),
+                      p1: UInt8((s >> 8) & 0xFF),
+                      p2: UInt8((s >> 16) & 0xFF),
+                      p3: UInt8((s >> 24) & 0xFF))
     }
 
     // MARK: - Frame builders
 
     private func sendHex(_ type: UInt8, p0: UInt8, p1: UInt8, p2: UInt8, p3: UInt8) {
         send(makeHexFrame(type: type, p0: p0, p1: p1, p2: p2, p3: p3))
+    }
+
+    private func sendBinCompat(_ type: UInt8, p0: UInt8, p1: UInt8, p2: UInt8, p3: UInt8) {
+        send(makeBinFrame(type: type, p0: p0, p1: p1, p2: p2, p3: p3, useCRC32: txUseCRC32, escapeCtl: txEscapeCtl))
     }
 
     private func sendRPOS(_ offset: Int) {
@@ -457,37 +578,146 @@ final class ZModemEngine {
         return Array(s.utf8)
     }
 
-    /// Builds an escaped data subpacket:
-    /// ZDLE-escaped(data) + ZDLE + terminator + ZDLE-escaped(CRC16(data+term))
-    private func makeDataSubpacket(_ data: [UInt8], terminator: UInt8) -> [UInt8] {
-        var out: [UInt8] = []
-        out.reserveCapacity(data.count + 8)
-        for b in data { zdleAppend(b, to: &out) }
-        out.append(ZDLE)
-        out.append(terminator)
-        let crc = crc16(data + [terminator])
-        zdleAppend(UInt8((crc >> 8) & 0xFF), to: &out)
-        zdleAppend(UInt8(crc & 0xFF),         to: &out)
+    /// Binary CRC frame:
+    /// - CRC16: ZPAD ZDLE ZBIN   + escaped(hdr) + escaped(crc16)
+    /// - CRC32: ZPAD ZDLE ZBIN32 + escaped(hdr) + escaped(crc32)
+    private func makeBinFrame(type: UInt8, p0: UInt8, p1: UInt8, p2: UInt8, p3: UInt8, useCRC32: Bool, escapeCtl: Bool = false) -> [UInt8] {
+        let hdr: [UInt8] = [type, p0, p1, p2, p3]
+        var out: [UInt8] = [ZPAD, ZDLE, useCRC32 ? ZBIN32 : ZBIN]
+        for b in hdr { zdleAppend(b, to: &out, escapeCtl: escapeCtl) }
+        if useCRC32 {
+            let chk = crc32(hdr)
+            // ZMODEM uses little-endian CRC32 in lrzsz
+            zdleAppend(UInt8(chk & 0xFF),         to: &out, escapeCtl: escapeCtl)
+            zdleAppend(UInt8((chk >> 8) & 0xFF),  to: &out, escapeCtl: escapeCtl)
+            zdleAppend(UInt8((chk >> 16) & 0xFF), to: &out, escapeCtl: escapeCtl)
+            zdleAppend(UInt8((chk >> 24) & 0xFF), to: &out, escapeCtl: escapeCtl)
+        } else {
+            let chk = crc16(hdr)
+            zdleAppend(UInt8((chk >> 8) & 0xFF), to: &out, escapeCtl: escapeCtl)
+            zdleAppend(UInt8(chk & 0xFF),        to: &out, escapeCtl: escapeCtl)
+        }
         return out
     }
 
-    private func zdleAppend(_ b: UInt8, to buf: inout [UInt8]) {
+    /// Builds an escaped data subpacket (uses instance escape setting).
+    private func makeDataSubpacket(_ data: [UInt8], terminator: UInt8) -> [UInt8] {
+        buildDataSubpacket(data, terminator: terminator, escapeCtl: txEscapeCtl, useCRC32: txUseCRC32)
+    }
+
+    /// Builds an escaped data subpacket:
+    /// ZDLE-escaped(data) + ZDLE + terminator + ZDLE-escaped(CRC(data+term))
+    private func buildDataSubpacket(_ data: [UInt8], terminator: UInt8, escapeCtl: Bool, useCRC32: Bool) -> [UInt8] {
+        var out: [UInt8] = []
+        out.reserveCapacity(data.count + data.count / 8 + 8)
+        for b in data { zdleAppend(b, to: &out, escapeCtl: escapeCtl) }
+        out.append(ZDLE)
+        out.append(terminator)
+        if useCRC32 {
+            let crc = crc32(data + [terminator])
+            zdleAppend(UInt8(crc & 0xFF),          to: &out, escapeCtl: escapeCtl)
+            zdleAppend(UInt8((crc >> 8) & 0xFF),   to: &out, escapeCtl: escapeCtl)
+            zdleAppend(UInt8((crc >> 16) & 0xFF),  to: &out, escapeCtl: escapeCtl)
+            zdleAppend(UInt8((crc >> 24) & 0xFF),  to: &out, escapeCtl: escapeCtl)
+        } else {
+            let crc = crc16(data + [terminator])
+            zdleAppend(UInt8((crc >> 8) & 0xFF), to: &out, escapeCtl: escapeCtl)
+            zdleAppend(UInt8(crc & 0xFF),        to: &out, escapeCtl: escapeCtl)
+        }
+        return out
+    }
+
+    /// ZDLE-escape a byte. When `escapeCtl` is true, escapes all control chars
+    /// (0x00-0x1F and 0x80-0x9F) as required by `rz -e`.
+    private func zdleAppend(_ b: UInt8, to buf: inout [UInt8], escapeCtl: Bool = false) {
+        if shouldEscape(b, escapeCtl: escapeCtl) {
+            buf.append(ZDLE); buf.append(b ^ 0x40)
+        } else {
+            buf.append(b)
+        }
+    }
+
+    private func shouldEscape(_ b: UInt8, escapeCtl: Bool) -> Bool {
         switch b {
         case ZDLE, 0x10, 0x90, 0x11, 0x91, 0x13, 0x93:
-            buf.append(ZDLE); buf.append(b ^ 0x40)
+            return true
+        case 0x00...0x1F, 0x80...0x9F:
+            return escapeCtl
         default:
-            buf.append(b)
+            return false
         }
     }
 
     private func send(_ bytes: [UInt8]) { onSend?(bytes) }
 
+    // MARK: - Abort
+
+    private func abortSend(reason: String) {
+        txSending = false
+        let cancel: [UInt8] = Array(repeating: 0x18, count: 8) + [0x0D, 0x0D, 0x0D]
+        send(cancel)
+        onStatusChange?(reason)
+        onTransferDone?()
+        reset()
+    }
+
+    // MARK: - Send watchdog
+
+    private func scheduleSendWatchdog(timeout: TimeInterval) {
+        cancelSendWatchdog()
+        let work = DispatchWorkItem { [weak self] in
+            self?.handleSendTimeout()
+        }
+        sendWatchdog = work
+        DispatchQueue.global(qos: .utility).asyncAfter(deadline: .now() + timeout, execute: work)
+    }
+
+    private func cancelSendWatchdog() {
+        sendWatchdog?.cancel()
+        sendWatchdog = nil
+    }
+
+    private func handleSendTimeout() {
+        guard role == .sending else { return }
+
+        switch sendPhase {
+        case .waitingZRPOS:
+            if sendRetryCount < 5 {
+                sendRetryCount += 1
+                onStatusChange?("ZMODEM: 等待接收端确认，重试 \(sendRetryCount)/5")
+                sendNextFile(retrying: true)
+            } else {
+                abortSend(reason: "ZMODEM: 上传超时，已取消")
+            }
+
+        case .waitingZRINITOrZFIN:
+            if sendRetryCount < 3 {
+                sendRetryCount += 1
+                onStatusChange?("ZMODEM: 等待接收端收尾，重试 \(sendRetryCount)/3")
+                if txLastEOFSize > 0 {
+                    sendEOF(size: txLastEOFSize)
+                } else {
+                    sendHex(ZFIN, p0: 0, p1: 0, p2: 0, p3: 0)
+                }
+                scheduleSendWatchdog(timeout: 5.0)
+            } else {
+                abortSend(reason: "ZMODEM: 上传超时，已取消")
+            }
+
+        case .idle, .streamingData:
+            break
+        }
+    }
+
     // MARK: - Reset
 
     private func reset() {
+        cancelSendWatchdog()
+        txSending = false
         role = .idle; phase = .idle; frameType = 0; binHdrNeeded = 7
+        sendPhase = .idle; sendRetryCount = 0; txEscapeCtl = false; txUseCRC32 = false
         rxData = Data(); rxName = ""; rxSize = 0; rxOffset = 0
-        txFiles = []; txIndex = 0; txOffset = 0
+        txFiles = []; txIndex = 0; txOffset = 0; txLastEOFSize = 0
     }
 
     // MARK: - Helpers
